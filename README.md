@@ -8,6 +8,19 @@ Install it directly from GitHub:
 omarchy plugin add https://github.com/tcballard/omarchy-plugin-workbench.git --enable
 ```
 
+Remove the plugin with:
+
+```bash
+omarchy plugin remove io.github.tcballard.plugin-workbench
+```
+
+Workbench deliberately leaves its project registry and deployment history behind. To remove that retained local data too, run:
+
+```bash
+rm -rf -- "$HOME/.config/omarchy/plugin-workbench" \
+  "$HOME/.local/state/omarchy/plugin-workbench"
+```
+
 It answers two different development needs explicitly:
 
 - **Live link** points Omarchy at the mutable plugin checkout for the fastest edit/reload loop.
