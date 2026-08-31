@@ -17,8 +17,6 @@ jq -e '
 if command -v omarchy >/dev/null 2>&1; then
   omarchy plugin validate "$repo_root"
 fi
-
 if command -v qmllint >/dev/null 2>&1 && [[ -n ${OMARCHY_PATH:-} ]]; then
   qmllint -I "$OMARCHY_PATH/shell" "$repo_root/BarWidget.qml" "$repo_root/Panel.qml"
 fi
-

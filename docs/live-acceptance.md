@@ -51,4 +51,3 @@ qmllint -I "$OMARCHY_PATH/shell" BarWidget.qml Panel.qml
 - Undeploy and confirm only the managed link disappears; source and snapshots remain.
 
 Do not mark live acceptance complete from a container, source review, `qmllint`, or automated tests alone.
-

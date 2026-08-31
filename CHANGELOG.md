@@ -11,4 +11,3 @@
 - Add Omarchy enable/disable, shell log filtering, and host diagnostics.
 - Add owner-only config, state, snapshot, receipt, and check-output handling.
 - Add unit and isolated lifecycle integration coverage.
-
