@@ -1,0 +1,54 @@
+# Omarchy Quattro live acceptance
+
+Complete this matrix on an actual official x86-64 Omarchy Quattro desktop before publishing `0.1.0`.
+
+## Record the host
+
+- Omarchy version and contract revision.
+- Whether the host matches `b686ed892d9c3020c3336203f6d34cc75b544e2b`.
+- Quickshell and Hyprland versions.
+- Monitor count, layout, and scale factors.
+- Plugin Workbench commit and release-binary SHA-256.
+
+## Build and validate
+
+```bash
+cargo build --workspace --locked --release
+install -m 0755 target/release/omarchy-plugin-workbench bin/omarchy-plugin-workbench-x86_64
+omarchy plugin validate .
+qmllint -I "$OMARCHY_PATH/shell" BarWidget.qml Panel.qml
+```
+
+## Native shell matrix
+
+- Link this checkout under `~/.config/omarchy/plugins/io.github.tcballard.plugin-workbench`.
+- Rescan and enable the widget in the right bar section.
+- Confirm the bar label renders on horizontal and vertical bars.
+- Open by click and `omarchy-shell shell summon io.github.tcballard.plugin-workbench '{}'`.
+- Close with Escape, outside click, repeated widget click, and shell hide.
+- Switch directly between Workbench and both neighbouring panels.
+- Confirm keyboard focus returns to the previous application after closing.
+- Confirm the panel fits at 100%, fractional, and high-DPI scale where available.
+- Register valid root and nested plugin projects from the panel.
+- Verify malformed, reserved-id, symlinked, and missing-entry-point projects fail visibly.
+- Run Validate and Test, including an untrusted-check refusal.
+- Link a development checkout and confirm saved QML changes reload.
+- Snapshot a dirty checkout and confirm the dirty marker and deployed revision remain truthful.
+- Roll back snapshot → live and snapshot → snapshot.
+- Enable and disable bar-widget, panel, overlay, menu, service, and bar plugin fixtures where practical.
+- Replace a managed target externally and confirm Workbench reports drift and refuses mutation.
+- Place an unmanaged checkout at the target and confirm Workbench preserves it.
+- Restart `omarchy-shell` and confirm registrations, receipts, and deployment state survive.
+- Lock the screen and verify Workbench does not perform plugin writes while locked.
+
+## Failure and recovery
+
+- Kill Workbench during a long check and confirm no child process remains.
+- Force a check timeout and confirm the process group is terminated.
+- Make config/state paths symlinks and confirm startup refuses them.
+- Remove a historical snapshot and confirm rollback fails without changing the active target.
+- Make `omarchy-shell` unavailable during a deployment and confirm the successful filesystem switch is reported with an explicit rescan warning.
+- Undeploy and confirm only the managed link disappears; source and snapshots remain.
+
+Do not mark live acceptance complete from a container, source review, `qmllint`, or automated tests alone.
+
