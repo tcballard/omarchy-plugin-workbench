@@ -19,6 +19,7 @@ Panel {
   property string refreshOutput: ""
   property string actionOutput: ""
   property string actionError: ""
+  property bool showBuilderSetup: false
   readonly property int projectCount: projects.length
   readonly property bool busy: refreshProcess.running || actionProcess.running
 
@@ -283,16 +284,57 @@ Panel {
                 }
               }
 
-              Text {
+              Column {
                 visible: root.projects.length === 0
                 width: parent.width
                 topPadding: Style.space(48)
-                text: "Register a checkout to begin. Workbench never scans your home directory automatically."
-                color: Qt.rgba(root.barForeground.r, root.barForeground.g, root.barForeground.b, 0.58)
-                font.family: root.bar ? root.bar.fontFamily : Style.font.family
-                font.pixelSize: Style.font.body
-                horizontalAlignment: Text.AlignHCenter
-                wrapMode: Text.WordWrap
+                spacing: Style.space(9)
+
+                Text {
+                  width: parent.width
+                  text: "Create with Build Omarchy Plugins"
+                  color: root.barForeground
+                  font.family: root.bar ? root.bar.fontFamily : Style.font.family
+                  font.pixelSize: Style.font.body
+                  font.bold: true
+                  horizontalAlignment: Text.AlignHCenter
+                }
+
+                Text {
+                  width: parent.width
+                  text: "Use the agent companion to scaffold a project, then register its checkout here. Workbench never scans your home directory automatically."
+                  color: Qt.rgba(root.barForeground.r, root.barForeground.g, root.barForeground.b, 0.58)
+                  font.family: root.bar ? root.bar.fontFamily : Style.font.family
+                  font.pixelSize: Style.font.body
+                  horizontalAlignment: Text.AlignHCenter
+                  wrapMode: Text.WordWrap
+                }
+
+                WorkbenchButton {
+                  anchors.horizontalCenter: parent.horizontalCenter
+                  label: root.showBuilderSetup ? "Hide setup" : "Builder setup"
+                  onTriggered: root.showBuilderSetup = !root.showBuilderSetup
+                }
+
+                Rectangle {
+                  visible: root.showBuilderSetup
+                  width: parent.width
+                  height: visible ? setupText.implicitHeight + Style.space(20) : 0
+                  radius: Style.cornerRadius
+                  color: Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.10)
+
+                  Text {
+                    id: setupText
+                    anchors.fill: parent
+                    anchors.margins: Style.space(10)
+                    text: "Install Build Omarchy Plugins in your preferred agent host, ask it to scaffold an Omarchy plugin, then paste the generated checkout path above.\n\ngithub.com/tcballard/build-omarchy-plugins"
+                    color: root.barForeground
+                    font.family: root.bar ? root.bar.fontFamily : Style.font.family
+                    font.pixelSize: Style.font.caption
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.WordWrap
+                  }
+                }
               }
             }
           }
@@ -387,6 +429,11 @@ Panel {
       Row {
         spacing: Style.space(5)
         WorkbenchButton { label: "Validate"; onTriggered: root.runAction("validate", card.project.id) }
+        WorkbenchButton {
+          visible: Number(card.project.checks || 0) > 0
+          label: card.project.projectChecksTrusted ? "Untrust" : "Trust checks"
+          onTriggered: root.runAction(card.project.projectChecksTrusted ? "untrust" : "trust", card.project.id)
+        }
         WorkbenchButton { label: "Test"; onTriggered: root.runAction("check", card.project.id) }
         WorkbenchButton { label: "Live link"; onTriggered: root.runAction("link", card.project.id) }
         WorkbenchButton { label: "Snapshot"; onTriggered: root.runAction("snapshot", card.project.id) }

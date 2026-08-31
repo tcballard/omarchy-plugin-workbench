@@ -1,14 +1,19 @@
 use crate::deploy::{git_state, load_receipt_for, validate};
 use crate::model::{
-    ActionReport, CheckReport, CheckResult, CheckSpec, DeploymentMode, DoctorReport,
-    OMARCHY_CONTRACT_REVISION, OMARCHY_MANIFEST_SCHEMA, Project, ProjectStatus, ToolResult,
+    ActionReport, BUILDER_REPOSITORY, BuilderCompanionReport, BuilderInstallation, CheckReport,
+    CheckResult, CheckSpec, DeploymentMode, DoctorReport, OMARCHY_CONTRACT_REVISION,
+    OMARCHY_MANIFEST_SCHEMA, PROJECT_SCHEMA, Project, ProjectStatus, ToolResult,
 };
 use crate::paths::AppPaths;
 use crate::process::{capture_tool, command_exists, run_check};
 use anyhow::{Context, Result, bail};
+use serde::Deserialize;
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::Read;
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+use std::path::Path;
 
 pub fn project_statuses(paths: &AppPaths, projects: &[Project]) -> Result<Vec<ProjectStatus>> {
     let enabled = enabled_plugins();
@@ -228,7 +233,100 @@ pub fn doctor(paths: &AppPaths) -> DoctorReport {
         state_directory: paths.state_dir.clone(),
         plugins_directory: paths.plugins_dir.clone(),
         tools,
+        builder_companion: detect_builder_companion(paths),
     }
+}
+
+const BUILDER_RECEIPT: &str = ".build-omarchy-plugins-receipt.json";
+const MAX_BUILDER_RECEIPT_BYTES: u64 = 2 * 1024 * 1024;
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BuilderReceipt {
+    schema_version: u32,
+    manager: String,
+    source: BuilderSource,
+    skills: BTreeMap<String, serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize)]
+struct BuilderSource {
+    repository: String,
+    version: String,
+}
+
+fn detect_builder_companion(paths: &AppPaths) -> BuilderCompanionReport {
+    let candidates = [
+        ("agents/codex", paths.home_dir.join(".agents/skills")),
+        ("cursor", paths.home_dir.join(".cursor/skills")),
+        ("gemini", paths.home_dir.join(".gemini/skills")),
+        ("claude", paths.home_dir.join(".claude/skills")),
+        ("opencode", paths.home_dir.join(".config/opencode/skills")),
+    ];
+    let mut installations = Vec::new();
+    let mut issues = Vec::new();
+    for (target, directory) in candidates {
+        let receipt_path = directory.join(BUILDER_RECEIPT);
+        if !receipt_path.exists() && !receipt_path.is_symlink() {
+            continue;
+        }
+        match read_builder_receipt(&receipt_path) {
+            Ok(receipt) => installations.push(BuilderInstallation {
+                target: target.to_owned(),
+                version: receipt.source.version,
+                receipt: receipt_path,
+            }),
+            Err(error) => issues.push(format!("{}: {error}", receipt_path.display())),
+        }
+    }
+    BuilderCompanionReport {
+        detected: !installations.is_empty(),
+        repository: BUILDER_REPOSITORY.to_owned(),
+        supported_project_schema: PROJECT_SCHEMA,
+        installations,
+        issues,
+    }
+}
+
+fn read_builder_receipt(path: &Path) -> Result<BuilderReceipt> {
+    let inspected = fs::symlink_metadata(path)
+        .with_context(|| format!("inspect builder receipt {}", path.display()))?;
+    if inspected.file_type().is_symlink() || !inspected.is_file() {
+        bail!("receipt is not a regular file");
+    }
+    if inspected.len() > MAX_BUILDER_RECEIPT_BYTES {
+        bail!("receipt exceeds {MAX_BUILDER_RECEIPT_BYTES} bytes");
+    }
+    let mut file = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(path)
+        .with_context(|| format!("open builder receipt {}", path.display()))?;
+    let opened = file
+        .metadata()
+        .with_context(|| format!("inspect opened builder receipt {}", path.display()))?;
+    if !opened.is_file() || (inspected.dev(), inspected.ino()) != (opened.dev(), opened.ino()) {
+        bail!("receipt changed while being opened");
+    }
+    let mut bytes = Vec::with_capacity(inspected.len() as usize);
+    file.by_ref()
+        .take(MAX_BUILDER_RECEIPT_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .context("read builder receipt")?;
+    if bytes.len() as u64 > MAX_BUILDER_RECEIPT_BYTES {
+        bail!("receipt exceeds {MAX_BUILDER_RECEIPT_BYTES} bytes");
+    }
+    let receipt: BuilderReceipt =
+        serde_json::from_slice(&bytes).context("parse builder receipt")?;
+    if receipt.schema_version != 1
+        || receipt.manager != "build-omarchy-plugins"
+        || receipt.source.repository != BUILDER_REPOSITORY
+        || receipt.source.version.trim().is_empty()
+        || !receipt.skills.contains_key("omarchy-plugin-scaffold")
+    {
+        bail!("receipt does not describe a supported Build Omarchy Plugins installation");
+    }
+    Ok(receipt)
 }
 
 fn require_command(name: &str) -> Result<()> {

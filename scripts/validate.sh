@@ -10,6 +10,15 @@ jq -e '
   and .entryPoints.barWidget == "BarWidget.qml"
 ' "$repo_root/manifest.json" >/dev/null
 
+jq -e '
+  .["$schema"] == "https://json-schema.org/draft/2020-12/schema"
+  and .properties.schemaVersion.const == 1
+  and .properties.pluginPath.type == "string"
+  and .properties.checks.maxItems == 32
+  and .["$defs"].check.properties.argv.maxItems == 64
+  and .["$defs"].check.properties.timeoutSeconds.maximum == 1800
+' "$repo_root/contracts/project-definition.schema.json" >/dev/null
+
 [[ -f $repo_root/BarWidget.qml ]]
 [[ -f $repo_root/Panel.qml ]]
 [[ -x $repo_root/bin/omarchy-plugin-workbench ]]
