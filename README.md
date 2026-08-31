@@ -44,7 +44,8 @@ Available actions are Validate, Test, Live link, Snapshot, Rollback, Enable, Dis
 
 ```bash
 cargo build --workspace --locked --release
-cmp target/release/omarchy-plugin-workbench bin/omarchy-plugin-workbench-x86_64
+sha256sum --check bin/SHA256SUMS
+bin/omarchy-plugin-workbench-x86_64 --version
 
 omarchy plugin validate .
 ```
