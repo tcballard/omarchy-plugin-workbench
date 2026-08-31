@@ -133,6 +133,25 @@ Config, state, receipts, and captured check output use owner-only permissions. S
 
 Workbench refuses to replace a normal directory, a Git checkout installed by Omarchy, or an unrecognised symlink. `undeploy` removes only the managed symlink and retains snapshot history. It never deletes the source checkout.
 
+## Build Omarchy Plugins companion
+
+[Build Omarchy Plugins](https://github.com/tcballard/build-omarchy-plugins) is the
+default authoring companion for Workbench. It designs, scaffolds, tests, and
+prepares releases; Workbench registers the resulting local checkout and owns its
+live-link, snapshot, rollback, and shell lifecycle.
+
+Generated projects declare the versioned integration in
+`.omarchy-workbench.json`. Workbench reads the proposed exact-argv checks at
+registration but never trusts them automatically. Review the definition and use
+the panel's **Trust checks** action or the CLI `trust` command before running
+project code.
+
+The authoritative schema is
+[`contracts/project-definition.schema.json`](contracts/project-definition.schema.json).
+`doctor --json` checks only the documented user-level Agent Skills receipt
+locations for a managed companion installation and reports its version. It does
+not search the rest of the home directory or install anything.
+
 ## CLI JSON contract
 
 Pass `--json` anywhere in a command. Successful commands emit one JSON value to stdout. Failures emit:

@@ -6,9 +6,11 @@ pub const PROJECT_SCHEMA: u32 = 1;
 pub const RECEIPT_SCHEMA: u32 = 1;
 pub const OMARCHY_MANIFEST_SCHEMA: u32 = 1;
 pub const OMARCHY_CONTRACT_REVISION: &str = "b686ed892d9c3020c3336203f6d34cc75b544e2b";
+pub const BUILDER_REPOSITORY: &str = "https://github.com/tcballard/build-omarchy-plugins";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct CheckSpec {
     pub name: String,
     pub argv: Vec<String>,
@@ -22,6 +24,7 @@ fn default_timeout() -> u64 {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct ProjectDefinition {
     pub schema_version: u32,
     #[serde(default)]
@@ -177,4 +180,23 @@ pub struct DoctorReport {
     pub state_directory: PathBuf,
     pub plugins_directory: PathBuf,
     pub tools: std::collections::BTreeMap<String, ToolResult>,
+    pub builder_companion: BuilderCompanionReport,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BuilderCompanionReport {
+    pub detected: bool,
+    pub repository: String,
+    pub supported_project_schema: u32,
+    pub installations: Vec<BuilderInstallation>,
+    pub issues: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BuilderInstallation {
+    pub target: String,
+    pub version: String,
+    pub receipt: PathBuf,
 }

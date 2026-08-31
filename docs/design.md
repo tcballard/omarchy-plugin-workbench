@@ -36,3 +36,16 @@ Receipts keep an ordered deployment history and an active index. Rollback moves 
 `.omarchy-workbench.json` is declarative project input. Workbench validates its schema and stores the proposed checks at registration, but does not execute them until `trust <plugin-id>` is called. Trust can be revoked without editing the project.
 
 The command runner avoids shell parsing, but it cannot make trusted code safe. Its timeout, process-group termination, output bounds, and null stdin prevent common hangs and accidental UI flooding.
+
+## Authoring companion boundary
+
+Build Omarchy Plugins is a separately versioned Agent Plugin, not an Omarchy
+runtime dependency. The two products integrate only through the versioned
+`.omarchy-workbench.json` project-definition contract. Workbench does not embed
+the companion skills, install them, invoke an agent host, or automatically trust
+generated checks.
+
+Companion discovery is evidence-bounded. `doctor` reads only managed installer
+receipts at the documented Agent Skills locations beneath the user's home
+directory. Normal panel refresh and project registration perform no companion
+scan.

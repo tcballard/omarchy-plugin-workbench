@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
 pub struct AppPaths {
+    pub home_dir: PathBuf,
     pub config_dir: PathBuf,
     pub config_file: PathBuf,
     pub state_dir: PathBuf,
@@ -33,6 +34,7 @@ impl AppPaths {
         let config_dir = config_base.join("omarchy/plugin-workbench");
         let state_dir = state_base.join("omarchy/plugin-workbench");
         Self {
+            home_dir: home.clone(),
             config_file: config_dir.join("projects.json"),
             lock_file: state_dir.join("workbench.lock"),
             plugins_dir: home.join(".config/omarchy/plugins"),

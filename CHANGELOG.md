@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Publish the schema-one project-definition contract for authoring tools.
+- Make Build Omarchy Plugins the default, separately versioned authoring companion.
+- Add bounded companion receipt detection to Doctor diagnostics.
+- Add explicit project-check trust controls and companion onboarding to the panel.
+- Cover generated-project checks and companion detection in lifecycle tests.
+
 ## 0.1.0 — 2026-08-31
 
 - Add a native Quattro bar widget and project-management panel.

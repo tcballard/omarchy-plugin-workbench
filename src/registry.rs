@@ -263,7 +263,7 @@ fn validate_checks(checks: &[crate::model::CheckSpec]) -> Result<()> {
         if check
             .argv
             .iter()
-            .any(|arg| arg.contains('\0') || arg.len() > 4096)
+            .any(|arg| arg.is_empty() || arg.contains('\0') || arg.len() > 4096)
         {
             bail!("check '{}' contains an invalid argument", check.name);
         }
