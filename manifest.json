@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.tcballard.plugin-workbench",
+  "name": "Plugin Workbench",
+  "version": "0.1.0",
+  "author": "Tom Ballard",
+  "license": "MIT",
+  "description": "Develop, validate, deploy, test, inspect, and roll back local Omarchy plugins.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Plugin Workbench",
+    "description": "Local plugin development and deployment status",
+    "category": "Development",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}
+
