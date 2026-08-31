@@ -18,6 +18,33 @@ pub struct CheckSpec {
     pub timeout_seconds: u64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
+pub struct WorkflowSpec {
+    pub name: String,
+    pub capability: String,
+    pub argv: Vec<String>,
+    #[serde(default = "default_timeout")]
+    pub timeout_seconds: u64,
+    #[serde(default)]
+    pub requires: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
+pub struct EnvironmentSpec {
+    pub name: String,
+    pub argv: Vec<String>,
+    #[serde(default = "default_required")]
+    pub required: bool,
+}
+
+fn default_required() -> bool {
+    true
+}
+
 fn default_timeout() -> u64 {
     300
 }
@@ -31,6 +58,10 @@ pub struct ProjectDefinition {
     pub plugin_path: Option<PathBuf>,
     #[serde(default)]
     pub checks: Vec<CheckSpec>,
+    #[serde(default)]
+    pub workflows: Vec<WorkflowSpec>,
+    #[serde(default)]
+    pub environment: Vec<EnvironmentSpec>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -41,7 +72,17 @@ pub struct Project {
     pub project_root: PathBuf,
     pub plugin_root: PathBuf,
     pub checks: Vec<CheckSpec>,
+    #[serde(default)]
+    pub workflows: Vec<WorkflowSpec>,
+    #[serde(default)]
+    pub environment: Vec<EnvironmentSpec>,
     pub project_checks_trusted: bool,
+    #[serde(default)]
+    pub trusted_definition_digest: Option<String>,
+    #[serde(default)]
+    pub definition_digest: Option<String>,
+    #[serde(default)]
+    pub approved_capabilities: Vec<String>,
     pub added_at_unix: u64,
 }
 
@@ -134,7 +175,11 @@ pub struct ProjectStatus {
     pub deployed_revision: Option<String>,
     pub enabled: Option<bool>,
     pub checks: usize,
+    pub workflows: usize,
+    pub environment_requirements: usize,
+    pub active_sessions: usize,
     pub project_checks_trusted: bool,
+    pub definition_changed_since_trust: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -143,6 +188,94 @@ pub struct CheckReport {
     pub ok: bool,
     pub project_id: String,
     pub results: Vec<CheckResult>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowReport {
+    pub ok: bool,
+    pub project_id: String,
+    pub capability: String,
+    pub result: CheckResult,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnvironmentReport {
+    pub ok: bool,
+    pub project_id: String,
+    pub results: Vec<EnvironmentResult>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnvironmentResult {
+    pub name: String,
+    pub required: bool,
+    pub argv: Vec<String>,
+    pub result: ToolResult,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionRecord {
+    pub schema_version: u32,
+    pub id: String,
+    pub project_id: String,
+    pub task: String,
+    pub agent: Option<String>,
+    pub objective: String,
+    pub branch: String,
+    pub worktree: PathBuf,
+    pub started_at_unix: u64,
+    pub closed_at_unix: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HandoffRecord {
+    pub schema_version: u32,
+    pub session_id: String,
+    pub project_id: String,
+    pub objective: String,
+    pub decisions: Vec<String>,
+    pub blockers: Vec<String>,
+    pub next_action: String,
+    pub branch: String,
+    pub worktree: PathBuf,
+    pub revision: Option<String>,
+    pub dirty: bool,
+    pub recorded_at_unix: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EvidenceRecord {
+    pub schema_version: u32,
+    pub project_id: String,
+    pub kind: String,
+    pub name: String,
+    pub ok: bool,
+    pub revision: Option<String>,
+    pub dirty: bool,
+    pub platform: String,
+    pub recorded_at_unix: u64,
+    pub detail: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReleaseReadinessReport {
+    pub ok: bool,
+    pub project_id: String,
+    pub version: String,
+    pub revision: Option<String>,
+    pub clean: bool,
+    pub changelog_mentions_version: bool,
+    pub current_revision_has_passing_checks: bool,
+    pub tag_exists: bool,
+    pub active_sessions: usize,
+    pub blockers: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -62,6 +62,26 @@ impl Harness {
         self.home
             .join(".config/omarchy/plugins/io.test.workbench-demo")
     }
+
+    fn initialise_git(&self) {
+        let run = |args: &[&str]| {
+            let output = Command::new("git")
+                .args(args)
+                .current_dir(&self.project)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        };
+        run(&["init", "-b", "main"]);
+        run(&["config", "user.name", "Workbench Test"]);
+        run(&["config", "user.email", "workbench@example.invalid"]);
+        run(&["add", "."]);
+        run(&["commit", "-m", "initial"]);
+    }
 }
 
 #[test]
@@ -206,4 +226,140 @@ fn doctor_detects_builder_only_from_a_managed_receipt() {
         companion["installations"][0]["receipt"],
         receipt.display().to_string()
     );
+}
+
+#[test]
+fn workflows_are_capability_gated_and_definition_changes_revoke_trust() {
+    let harness = Harness::new();
+    fs::create_dir_all(harness.project.join("scripts")).unwrap();
+    let preview = harness.project.join("scripts/preview");
+    fs::write(&preview, "#!/bin/sh\nprintf 'preview-ready\\n'\n").unwrap();
+    fs::set_permissions(&preview, fs::Permissions::from_mode(0o755)).unwrap();
+    fs::write(
+        harness.project.join(".omarchy-workbench.json"),
+        r#"{
+          "schemaVersion": 1,
+          "pluginPath": ".",
+          "environment": [
+            {"name": "git", "argv": ["git", "--version"], "required": true}
+          ],
+          "workflows": [
+            {"name": "preview", "capability": "preview", "argv": ["./scripts/preview"]}
+          ]
+        }"#,
+    )
+    .unwrap();
+    let project = harness.project.to_string_lossy().into_owned();
+    harness.json(&["add", &project, "--json"]);
+
+    let refused = harness.run(&["workflow", "io.test.workbench-demo", "preview", "--json"]);
+    assert!(!refused.status.success());
+    harness.json(&["trust", "io.test.workbench-demo", "--json"]);
+    harness.json(&["approve", "io.test.workbench-demo", "preview", "--json"]);
+    let environment = harness.json(&["environment", "io.test.workbench-demo", "--json"]);
+    assert_eq!(environment["ok"], true);
+    let workflow = harness.json(&["workflow", "io.test.workbench-demo", "preview", "--json"]);
+    assert_eq!(workflow["ok"], true);
+    assert_eq!(workflow["result"]["stdout"], "preview-ready\n");
+
+    let evidence = harness.json(&["evidence", "io.test.workbench-demo", "--json"]);
+    assert_eq!(evidence[0]["kind"], "workflow");
+    fs::write(
+        harness.project.join(".omarchy-workbench.json"),
+        r#"{"schemaVersion":1,"pluginPath":".","workflows":[]}"#,
+    )
+    .unwrap();
+    let changed = harness.run(&["workflow", "io.test.workbench-demo", "preview", "--json"]);
+    assert!(!changed.status.success());
+    let error: Value = serde_json::from_slice(&changed.stdout).unwrap();
+    assert!(
+        error["error"]
+            .as_str()
+            .unwrap()
+            .contains("changed since trust")
+    );
+    let refreshed = harness.json(&["refresh", "io.test.workbench-demo", "--json"]);
+    assert_eq!(
+        refreshed["project"]["workflows"].as_array().unwrap().len(),
+        0
+    );
+    assert_eq!(refreshed["project"]["projectChecksTrusted"], false);
+    assert!(
+        refreshed["project"]["approvedCapabilities"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn isolated_sessions_and_handoffs_remain_agent_neutral() {
+    let harness = Harness::new();
+    harness.initialise_git();
+    let project = harness.project.to_string_lossy().into_owned();
+    harness.json(&["add", &project, "--json"]);
+    let started = harness.json(&[
+        "session-start",
+        "io.test.workbench-demo",
+        "--task",
+        "fix-preview",
+        "--agent",
+        "opencode",
+        "--objective",
+        "Repair the preview workflow",
+        "--json",
+    ]);
+    let session = &started["session"];
+    assert_eq!(session["branch"], "codex/fix-preview");
+    assert_eq!(session["agent"], "opencode");
+    assert!(PathBuf::from(session["worktree"].as_str().unwrap()).is_dir());
+    let session_id = session["id"].as_str().unwrap();
+    let handoff = harness.json(&[
+        "handoff",
+        session_id,
+        "--decision",
+        "Keep the contract agent-neutral",
+        "--next-action",
+        "Run the project checks",
+        "--json",
+    ]);
+    assert_eq!(handoff["handoff"]["projectId"], "io.test.workbench-demo");
+    assert_eq!(
+        handoff["handoff"]["decisions"][0],
+        "Keep the contract agent-neutral"
+    );
+    harness.json(&["session-close", session_id, "--json"]);
+    let sessions = harness.json(&["sessions", "io.test.workbench-demo", "--json"]);
+    assert!(sessions[0]["closedAtUnix"].is_number());
+    assert!(PathBuf::from(sessions[0]["worktree"].as_str().unwrap()).is_dir());
+}
+
+#[test]
+fn release_readiness_requires_current_clean_check_evidence() {
+    let harness = Harness::new();
+    fs::write(
+        harness.project.join("CHANGELOG.md"),
+        "# Changelog\n\n## 0.1.0\n",
+    )
+    .unwrap();
+    harness.initialise_git();
+    let project = harness.project.to_string_lossy().into_owned();
+    harness.json(&["add", &project, "--json"]);
+
+    let before = harness.run(&["release-check", "io.test.workbench-demo", "--json"]);
+    assert!(!before.status.success());
+    let blocked: Value = serde_json::from_slice(&before.stdout).unwrap();
+    assert!(
+        blocked["blockers"][0]
+            .as_str()
+            .unwrap()
+            .contains("passing check evidence")
+    );
+
+    harness.json(&["check", "io.test.workbench-demo", "--json"]);
+    let ready = harness.json(&["release-check", "io.test.workbench-demo", "--json"]);
+    assert_eq!(ready["ok"], true);
+    assert_eq!(ready["version"], "0.1.0");
+    assert_eq!(ready["clean"], true);
+    assert_eq!(ready["tagExists"], false);
 }
