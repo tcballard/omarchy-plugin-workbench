@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 — unreleased
+## 0.1.0 — 2026-08-31
 
 - Add a native Quattro bar widget and project-management panel.
 - Add explicit registration for root and nested plugin projects.
