@@ -1,0 +1,79 @@
+use anyhow::{Context, Result, bail};
+use std::env;
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
+
+#[derive(Debug, Clone)]
+pub struct AppPaths {
+    pub config_dir: PathBuf,
+    pub config_file: PathBuf,
+    pub state_dir: PathBuf,
+    pub plugins_dir: PathBuf,
+    pub snapshots_dir: PathBuf,
+    pub receipts_dir: PathBuf,
+    pub lock_file: PathBuf,
+}
+
+impl AppPaths {
+    pub fn discover() -> Result<Self> {
+        let home = env::var_os("HOME")
+            .map(PathBuf::from)
+            .context("HOME is not set")?;
+        let config_base = env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join(".config"));
+        let state_base = env::var_os("XDG_STATE_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join(".local/state"));
+        Ok(Self::from_bases(home, config_base, state_base))
+    }
+
+    pub fn from_bases(home: PathBuf, config_base: PathBuf, state_base: PathBuf) -> Self {
+        let config_dir = config_base.join("omarchy/plugin-workbench");
+        let state_dir = state_base.join("omarchy/plugin-workbench");
+        Self {
+            config_file: config_dir.join("projects.json"),
+            lock_file: state_dir.join("workbench.lock"),
+            plugins_dir: home.join(".config/omarchy/plugins"),
+            snapshots_dir: state_dir.join("snapshots"),
+            receipts_dir: state_dir.join("deployments"),
+            config_dir,
+            state_dir,
+        }
+    }
+
+    pub fn ensure(&self) -> Result<()> {
+        for dir in [
+            &self.config_dir,
+            &self.state_dir,
+            &self.snapshots_dir,
+            &self.receipts_dir,
+        ] {
+            secure_dir(dir)?;
+        }
+        Ok(())
+    }
+
+    pub fn receipt_path(&self, id: &str) -> PathBuf {
+        self.receipts_dir.join(format!("{id}.json"))
+    }
+}
+
+pub fn secure_dir(path: &Path) -> Result<()> {
+    if path.exists() {
+        let meta = fs::symlink_metadata(path)
+            .with_context(|| format!("inspect directory {}", path.display()))?;
+        if meta.file_type().is_symlink() {
+            bail!("security boundary is a symlink: {}", path.display());
+        }
+        if !meta.is_dir() {
+            bail!("expected a directory: {}", path.display());
+        }
+    } else {
+        fs::create_dir_all(path).with_context(|| format!("create {}", path.display()))?;
+    }
+    fs::set_permissions(path, fs::Permissions::from_mode(0o700))
+        .with_context(|| format!("set private permissions on {}", path.display()))?;
+    Ok(())
+}
