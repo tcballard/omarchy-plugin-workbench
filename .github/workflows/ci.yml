@@ -23,6 +23,12 @@ jobs:
         run: cargo test --all-targets --all-features --locked
       - name: Release build
         run: cargo build --workspace --locked --release
+      - name: Upload Linux runtime candidate
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: omarchy-plugin-workbench-linux-x86_64
+          path: target/release/omarchy-plugin-workbench
+          if-no-files-found: error
       - name: Verify committed runtime
         run: |
           sha256sum --check bin/SHA256SUMS

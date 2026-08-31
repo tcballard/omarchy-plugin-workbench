@@ -13,6 +13,10 @@ pub struct AppPaths {
     pub plugins_dir: PathBuf,
     pub snapshots_dir: PathBuf,
     pub receipts_dir: PathBuf,
+    pub sessions_dir: PathBuf,
+    pub sessions_file: PathBuf,
+    pub handoffs_dir: PathBuf,
+    pub evidence_dir: PathBuf,
     pub lock_file: PathBuf,
 }
 
@@ -33,6 +37,7 @@ impl AppPaths {
     pub fn from_bases(home: PathBuf, config_base: PathBuf, state_base: PathBuf) -> Self {
         let config_dir = config_base.join("omarchy/plugin-workbench");
         let state_dir = state_base.join("omarchy/plugin-workbench");
+        let sessions_dir = state_dir.join("sessions");
         Self {
             home_dir: home.clone(),
             config_file: config_dir.join("projects.json"),
@@ -40,6 +45,10 @@ impl AppPaths {
             plugins_dir: home.join(".config/omarchy/plugins"),
             snapshots_dir: state_dir.join("snapshots"),
             receipts_dir: state_dir.join("deployments"),
+            sessions_file: state_dir.join("sessions.json"),
+            handoffs_dir: state_dir.join("handoffs"),
+            evidence_dir: state_dir.join("evidence"),
+            sessions_dir,
             config_dir,
             state_dir,
         }
@@ -51,6 +60,9 @@ impl AppPaths {
             &self.state_dir,
             &self.snapshots_dir,
             &self.receipts_dir,
+            &self.sessions_dir,
+            &self.handoffs_dir,
+            &self.evidence_dir,
         ] {
             secure_dir(dir)?;
         }

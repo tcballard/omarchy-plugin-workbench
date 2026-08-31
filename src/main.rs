@@ -1,3 +1,4 @@
+mod coordination;
 mod deploy;
 mod manifest;
 mod model;
@@ -34,6 +35,8 @@ enum Command {
         #[arg(long, help = "Trust and permit project-defined check commands")]
         trust_project_checks: bool,
     },
+    /// Reload the shared project definition and revoke prior trust and approvals.
+    Refresh { id: String },
     /// Forget a registered project without deleting its checkout.
     Remove { id: String },
     /// List registered projects and their live state.
@@ -60,6 +63,48 @@ enum Command {
         #[arg(long)]
         name: Option<String>,
     },
+    /// Run a trusted, capability-gated project workflow.
+    Workflow { id: String, name: String },
+    /// Run trusted project-declared environment probes.
+    Environment { id: String },
+    /// Locally approve a workflow capability for one project.
+    Approve { id: String, capability: String },
+    /// Revoke a local workflow capability approval.
+    Revoke { id: String, capability: String },
+    /// Create an isolated Git worktree for an agent task.
+    SessionStart {
+        id: String,
+        #[arg(long)]
+        task: String,
+        #[arg(long)]
+        agent: Option<String>,
+        #[arg(long)]
+        objective: String,
+    },
+    /// List local task sessions, optionally for one project.
+    Sessions { id: Option<String> },
+    /// Mark a task session closed without deleting its worktree or branch.
+    SessionClose { session_id: String },
+    /// Record a structured, agent-neutral continuation handoff.
+    Handoff {
+        session_id: String,
+        #[arg(long)]
+        decision: Vec<String>,
+        #[arg(long)]
+        blocker: Vec<String>,
+        #[arg(long)]
+        next_action: String,
+    },
+    /// Read recent verification evidence for a project.
+    Evidence {
+        id: String,
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
+    },
+    /// Evaluate release readiness without tagging, publishing, or mutating Git.
+    ReleaseCheck { id: String },
+    /// Combine project, environment, session, and evidence diagnostics.
+    Diagnose { id: String },
     /// Allow the exact argv checks declared by a project.
     Trust { id: String },
     /// Revoke permission to run project-defined checks.
@@ -129,6 +174,17 @@ fn run(cli: &Cli) -> Result<()> {
                 cli.json,
                 &json!({"ok": true, "action": "remove", "project": project}),
                 &format!("Forgot {} without deleting its checkout", project.id),
+            )
+        }
+        Command::Refresh { id } => {
+            let project = registry::refresh_project(&paths, id)?;
+            emit(
+                cli.json,
+                &json!({"ok": true, "action": "refresh", "project": project}),
+                &format!(
+                    "Refreshed {}; command trust and capability approvals were revoked",
+                    project.id
+                ),
             )
         }
         Command::List | Command::Status => {
@@ -206,6 +262,157 @@ fn run(cli: &Cli) -> Result<()> {
             };
             emit(cli.json, &report, &message)?;
             if report.ok {
+                Ok(())
+            } else {
+                Err(ReportedFailure.into())
+            }
+        }),
+        Command::Workflow { id, name } => with_project(&paths, id, |project| {
+            let report = workbench::run_workflow(&paths, project, name)?;
+            emit(
+                cli.json,
+                &report,
+                &format!(
+                    "{} workflow {}",
+                    name,
+                    if report.ok { "passed" } else { "failed" }
+                ),
+            )?;
+            if report.ok {
+                Ok(())
+            } else {
+                Err(ReportedFailure.into())
+            }
+        }),
+        Command::Environment { id } => with_project(&paths, id, |project| {
+            let report = workbench::inspect_environment(&paths, project)?;
+            emit(
+                cli.json,
+                &report,
+                if report.ok {
+                    "Project environment is ready"
+                } else {
+                    "Project environment is missing requirements"
+                },
+            )?;
+            if report.ok {
+                Ok(())
+            } else {
+                Err(ReportedFailure.into())
+            }
+        }),
+        Command::Approve { id, capability } => {
+            let project = registry::set_capability_approval(&paths, id, capability, true)?;
+            emit(
+                cli.json,
+                &json!({"ok": true, "action": "approve", "capability": capability, "project": project}),
+                &format!("Approved {capability} for {}", project.id),
+            )
+        }
+        Command::Revoke { id, capability } => {
+            let project = registry::set_capability_approval(&paths, id, capability, false)?;
+            emit(
+                cli.json,
+                &json!({"ok": true, "action": "revoke", "capability": capability, "project": project}),
+                &format!("Revoked {capability} for {}", project.id),
+            )
+        }
+        Command::SessionStart {
+            id,
+            task,
+            agent,
+            objective,
+        } => with_project(&paths, id, |project| {
+            let session =
+                coordination::start_session(&paths, project, task, agent.as_deref(), objective)?;
+            emit(
+                cli.json,
+                &json!({"ok": true, "action": "session-start", "session": session}),
+                &format!(
+                    "Created {} at {}",
+                    session.branch,
+                    session.worktree.display()
+                ),
+            )
+        }),
+        Command::Sessions { id } => {
+            let sessions = coordination::list_sessions(&paths, id.as_deref())?;
+            emit(
+                cli.json,
+                &sessions,
+                &format!("{} task sessions", sessions.len()),
+            )
+        }
+        Command::SessionClose { session_id } => {
+            let session = coordination::close_session(&paths, session_id)?;
+            emit(
+                cli.json,
+                &json!({"ok": true, "action": "session-close", "session": session}),
+                &format!("Closed session {}; worktree retained", session.id),
+            )
+        }
+        Command::Handoff {
+            session_id,
+            decision,
+            blocker,
+            next_action,
+        } => {
+            let handoff = coordination::write_handoff(
+                &paths,
+                session_id,
+                decision.clone(),
+                blocker.clone(),
+                next_action,
+            )?;
+            emit(
+                cli.json,
+                &json!({"ok": true, "action": "handoff", "handoff": handoff}),
+                &format!("Recorded handoff for {}", handoff.session_id),
+            )
+        }
+        Command::Evidence { id, limit } => {
+            let evidence = coordination::read_evidence(&paths, id, *limit)?;
+            emit(
+                cli.json,
+                &evidence,
+                &format!("{} evidence records", evidence.len()),
+            )
+        }
+        Command::ReleaseCheck { id } => with_project(&paths, id, |project| {
+            let report = workbench::release_readiness(&paths, project)?;
+            emit(
+                cli.json,
+                &report,
+                if report.ok {
+                    "Project is release-ready"
+                } else {
+                    "Project is not release-ready"
+                },
+            )?;
+            if report.ok {
+                Ok(())
+            } else {
+                Err(ReportedFailure.into())
+            }
+        }),
+        Command::Diagnose { id } => with_project(&paths, id, |project| {
+            let enabled = std::collections::HashMap::new();
+            let status = workbench::project_status(&paths, project, &enabled)?;
+            let environment = workbench::inspect_environment(&paths, project)?;
+            let sessions = coordination::list_sessions(&paths, Some(&project.id))?;
+            let evidence = coordination::read_evidence(&paths, &project.id, 10)?;
+            let ok = environment.ok;
+            let report = json!({"ok": ok, "project": status, "environment": environment, "sessions": sessions, "recentEvidence": evidence});
+            emit(
+                cli.json,
+                &report,
+                if ok {
+                    "Project diagnostics are healthy"
+                } else {
+                    "Project diagnostics found environment problems"
+                },
+            )?;
+            if ok {
                 Ok(())
             } else {
                 Err(ReportedFailure.into())

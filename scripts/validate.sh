@@ -15,6 +15,10 @@ jq -e '
   and .properties.schemaVersion.const == 1
   and .properties.pluginPath.type == "string"
   and .properties.checks.maxItems == 32
+  and .properties.workflows.maxItems == 32
+  and .properties.environment.maxItems == 32
+  and (.["$defs"].workflow.properties.capability.enum | index("preview") != null)
+  and (.["$defs"].workflow.properties.capability.enum | index("publish") != null)
   and .["$defs"].check.properties.argv.maxItems == 64
   and .["$defs"].check.properties.timeoutSeconds.maximum == 1800
 ' "$repo_root/contracts/project-definition.schema.json" >/dev/null
