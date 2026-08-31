@@ -18,7 +18,7 @@ Plugin Workbench treats plugin source, project configuration, shell logs, and in
 - Checks are exact argv arrays; no shell is inserted. Direct `sudo`, `doas`, `su`, and `pkexec` invocations are refused.
 - Each check has a bounded timeout, a separate process group, null stdin, and 64 KiB stdout/stderr limits.
 - The QML panel constructs process commands as arrays and never interpolates a project id or path into shell source.
-- The bundled x86-64 helper is an intentional reviewed binary. CI rebuilds the locked source and requires byte identity with the committed executable.
+- The bundled x86-64 helper is an intentional reviewed binary. CI builds and tests the locked source, then independently verifies the committed executable's recorded SHA-256 and version. Native linker output is not claimed to be reproducible across build environments.
 
 ## Important limitation
 

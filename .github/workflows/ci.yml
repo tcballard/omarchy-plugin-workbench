@@ -24,7 +24,9 @@ jobs:
       - name: Release build
         run: cargo build --workspace --locked --release
       - name: Verify committed runtime
-        run: cmp target/release/omarchy-plugin-workbench bin/omarchy-plugin-workbench-x86_64
+        run: |
+          sha256sum --check bin/SHA256SUMS
+          test "$(bin/omarchy-plugin-workbench-x86_64 --version)" = "omarchy-plugin-workbench 0.1.0"
       - name: Shell syntax
         run: bash -n bin/omarchy-plugin-workbench scripts/validate.sh
       - name: Pinned Omarchy contract
