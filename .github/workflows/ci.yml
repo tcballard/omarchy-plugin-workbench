@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.98.0 --profile minimal --component rustfmt,clippy
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Tests
+        run: cargo test --all-targets --all-features --locked
+      - name: Release build
+        run: cargo build --workspace --locked --release
+      - name: Verify committed runtime
+        run: cmp target/release/omarchy-plugin-workbench bin/omarchy-plugin-workbench-x86_64
+      - name: Shell syntax
+        run: bash -n bin/omarchy-plugin-workbench scripts/validate.sh
+      - name: Pinned Omarchy contract
+        run: |
+          git clone --filter=blob:none https://github.com/omacom/omarchy.git /tmp/omarchy
+          git -C /tmp/omarchy checkout b686ed892d9c3020c3336203f6d34cc75b544e2b
+          /tmp/omarchy/bin/omarchy-plugin-validate "$PWD"
+      - name: Project validation
+        run: scripts/validate.sh
