@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "pluginPath": ".",
+  "checks": [
+    {
+      "name": "format",
+      "argv": ["cargo", "fmt", "--all", "--", "--check"],
+      "timeoutSeconds": 120
+    },
+    {
+      "name": "clippy",
+      "argv": ["cargo", "clippy", "--all-targets", "--all-features", "--", "-D", "warnings"],
+      "timeoutSeconds": 600
+    },
+    {
+      "name": "tests",
+      "argv": ["cargo", "test", "--all-targets", "--all-features"],
+      "timeoutSeconds": 600
+    },
+    {
+      "name": "plugin-contract",
+      "argv": ["./scripts/validate.sh"],
+      "timeoutSeconds": 120
+    }
+  ]
+}
+
