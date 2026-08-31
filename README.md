@@ -49,9 +49,11 @@ For each explicitly registered project, Workbench shows:
 - Deployed revision.
 - Omarchy enabled/disabled state.
 - Whether project-defined checks are trusted.
+- Declared capability workflows and active isolated work sessions.
+- Whether the project definition changed after it was trusted.
 - Drift when the managed link changes outside Workbench.
 
-Available actions are Validate, Test, Live link, Snapshot, Rollback, Enable, Disable, Undeploy, Logs, and Doctor.
+Available actions include Validate, Test, capability workflows, environment diagnostics, isolated sessions, handoffs, evidence, release readiness, Live link, Snapshot, Rollback, Enable, Disable, Undeploy, Logs, and Doctor.
 
 ## Build the local package
 
@@ -93,7 +95,7 @@ If a plugin lives in a subdirectory that is not `omarchy-plugin/`, specify it:
 bin/omarchy-plugin-workbench add /path/to/project --plugin-path packaging/omarchy
 ```
 
-## Project-defined checks
+## Portable project contract
 
 A project can declare exact argument vectors in `.omarchy-workbench.json`:
 
@@ -107,18 +109,77 @@ A project can declare exact argument vectors in `.omarchy-workbench.json`:
       "argv": ["cargo", "test", "--workspace", "--locked"],
       "timeoutSeconds": 600
     }
+  ],
+  "environment": [
+    {
+      "name": "rust",
+      "argv": ["rustc", "--version"],
+      "required": true
+    }
+  ],
+  "workflows": [
+    {
+      "name": "preview",
+      "capability": "preview",
+      "argv": ["./scripts/preview"],
+      "timeoutSeconds": 600,
+      "requires": []
+    }
   ]
 }
 ```
 
-Registration reads these commands but does not trust or run them. Review the file, then make the trust decision explicitly:
+This file contains shared project facts, never agent-specific configuration. Codex, OpenCode, or another Agent Skills host can operate on the same checkout and contract.
+
+Registration reads declared commands but does not trust or run them. Review the file, then make trust and workflow-capability decisions explicitly:
 
 ```bash
 bin/omarchy-plugin-workbench trust io.github.example.plugin
 bin/omarchy-plugin-workbench check io.github.example.plugin
+bin/omarchy-plugin-workbench environment io.github.example.plugin
+bin/omarchy-plugin-workbench approve io.github.example.plugin preview
+bin/omarchy-plugin-workbench workflow io.github.example.plugin preview
 ```
 
-Checks run without a shell, with null stdin, a fresh process group, a declared timeout, and bounded captured output. They still execute with your user permissions and must be treated as arbitrary project code.
+Trust is bound to the exact SHA-256 of `.omarchy-workbench.json`; editing it invalidates executable trust. Commands run without an inserted shell, with null stdin, a fresh process group, a declared timeout, and bounded captured output. They still execute with your user permissions and must be treated as arbitrary project code. Capability approval is a local policy gate, not an operating-system sandbox.
+
+After intentionally editing the definition, reload it before reviewing and trusting the new command set. Refresh revokes prior command trust and every capability approval:
+
+```bash
+bin/omarchy-plugin-workbench refresh io.github.example.plugin
+```
+
+## Parallel agent sessions and handoffs
+
+Create one isolated Git worktree and `codex/*` branch per task. The optional agent label is local session metadata only and never enters the project contract:
+
+```bash
+bin/omarchy-plugin-workbench session-start io.github.example.plugin \
+  --task repair-preview --agent opencode \
+  --objective "Repair preview startup without changing the plugin contract"
+bin/omarchy-plugin-workbench sessions io.github.example.plugin
+```
+
+Workbench refuses to create a session from a dirty source checkout. Closing a session is deliberately non-destructive: it marks the record closed but retains the branch and worktree.
+
+```bash
+bin/omarchy-plugin-workbench handoff SESSION_ID \
+  --decision "Keep startup agent-neutral" \
+  --next-action "Run project checks"
+bin/omarchy-plugin-workbench session-close SESSION_ID
+```
+
+Handoffs capture the objective, decisions, blockers, next action, branch, worktree, revision, and dirty state in private local state.
+
+## Evidence and release readiness
+
+Checks, workflows, environment probes, and release preflights append bounded structured records to the per-project evidence ledger. Release readiness is read-only: it checks validation, clean Git state, changelog/version agreement, clean passing evidence for the current revision, and open sessions. It never tags, pushes, publishes, or closes sessions.
+
+```bash
+bin/omarchy-plugin-workbench diagnose io.github.example.plugin
+bin/omarchy-plugin-workbench evidence io.github.example.plugin --limit 20
+bin/omarchy-plugin-workbench release-check io.github.example.plugin
+```
 
 ## State and recovery
 
@@ -127,6 +188,10 @@ Checks run without a shell, with null stdin, a fresh process group, a declared t
 | `~/.config/omarchy/plugin-workbench/projects.json` | Explicit project registry |
 | `~/.local/state/omarchy/plugin-workbench/snapshots/` | Immutable plugin snapshots |
 | `~/.local/state/omarchy/plugin-workbench/deployments/` | Deployment history and active receipt |
+| `~/.local/state/omarchy/plugin-workbench/sessions/` | Isolated task worktrees |
+| `~/.local/state/omarchy/plugin-workbench/sessions.json` | Local session ownership and lifecycle |
+| `~/.local/state/omarchy/plugin-workbench/handoffs/` | Structured continuation records |
+| `~/.local/state/omarchy/plugin-workbench/evidence/` | Append-only per-project evidence ledgers |
 | `~/.config/omarchy/plugins/<plugin-id>` | Atomic symlink controlled by Workbench |
 
 Config, state, receipts, and captured check output use owner-only permissions. Snapshot directories are owner-only too.

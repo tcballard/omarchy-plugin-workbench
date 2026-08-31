@@ -31,11 +31,19 @@ Snapshot names contain the deployment timestamp and the first twelve characters 
 
 Receipts keep an ordered deployment history and an active index. Rollback moves the index one entry backwards and atomically redirects the target. Deploying after a rollback truncates the abandoned forward branch before appending the new deployment.
 
-## Trust model for checks
+## Shared contract and local policy
 
-`.omarchy-workbench.json` is declarative project input. Workbench validates its schema and stores the proposed checks at registration, but does not execute them until `trust <plugin-id>` is called. Trust can be revoked without editing the project.
+`.omarchy-workbench.json` is declarative, agent-neutral project input. It contains plugin location, checks, environment probes, and named capability workflows. Agent labels, approvals, sessions, handoffs, and evidence remain in owner-only local state.
+
+Workbench stores the project-definition digest at registration and the trusted digest at approval. A byte change invalidates executable trust. Workflows also require local approval for their declared capability and requirements.
 
 The command runner avoids shell parsing, but it cannot make trusted code safe. Its timeout, process-group termination, output bounds, and null stdin prevent common hangs and accidental UI flooding.
+
+## Parallel work and evidence
+
+Each task session owns a `codex/*` branch and Git worktree beneath private Workbench state. The source checkout must be clean before a session starts. Closing is metadata-only and retains the worktree and branch, keeping recovery explicit.
+
+Structured handoffs describe work rather than a particular agent protocol. Evidence records bind an operation result to revision, dirty state, platform, and time. Release readiness consumes that evidence but performs no release mutation.
 
 ## Authoring companion boundary
 

@@ -14,7 +14,9 @@ Plugin Workbench treats plugin source, project configuration, shell logs, and in
 - Existing unmanaged files, directories, Git checkouts, and symlinks are never overwritten.
 - Every managed switch verifies that the active symlink still matches the recorded deployment receipt.
 - Snapshots omit `.git/` and `target/`, preserve executable intent, and use owner-only permissions.
-- Project checks are imported as data but remain disabled until explicitly trusted.
+- Project checks, environment probes, and workflows are imported as data but remain disabled until explicitly trusted.
+- Executable trust is tied to the exact project-definition digest; editing the definition invalidates prior trust.
+- Workflow capabilities require separate local approval and remain outside the shared project contract.
 - Checks are exact argv arrays; no shell is inserted. Direct `sudo`, `doas`, `su`, and `pkexec` invocations are refused.
 - Each check has a bounded timeout, a separate process group, null stdin, and 64 KiB stdout/stderr limits.
 - The QML panel constructs process commands as arrays and never interpolates a project id or path into shell source.
@@ -22,7 +24,7 @@ Plugin Workbench treats plugin source, project configuration, shell logs, and in
 
 ## Important limitation
 
-Trusted project checks and enabled Omarchy plugins execute with the current user's permissions. A script can invoke its own shell or access anything the user can access. Trust is therefore a review boundary, not confinement.
+Trusted project commands and enabled Omarchy plugins execute with the current user's permissions. A script can invoke its own shell, use the network, write outside the project, or access anything the user can access. Capability approval and trust are review boundaries, not confinement.
 
 ## Non-goals
 
@@ -33,6 +35,7 @@ Workbench does not:
 - Execute plugin install/update hooks.
 - Publish, submit, tag, or push repositories.
 - Delete project checkouts.
+- Delete session worktrees or branches when a session is closed.
 - Clean old snapshots automatically.
 - Claim to security-audit third-party plugin behavior.
 

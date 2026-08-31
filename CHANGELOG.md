@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Add isolated Git worktree sessions with optional local agent labels and non-destructive closure.
+- Add structured agent-neutral handoffs with revision and dirty-state evidence.
+- Add capability workflows, environment requirements, and separate local capability approval.
+- Bind executable trust to the exact project-definition digest.
+- Add append-only verification evidence, combined diagnostics, and read-only release readiness.
 - Publish the schema-one project-definition contract for authoring tools.
 - Make Build Omarchy Plugins the default, separately versioned authoring companion.
 - Add bounded companion receipt detection to Doctor diagnostics.
