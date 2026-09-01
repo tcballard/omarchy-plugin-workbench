@@ -23,11 +23,16 @@ Plugin Workbench treats plugin source, project configuration, shell logs, and in
 - Nested Hyprland and Quickshell are separate owned process groups. Stop verifies each PID's Linux start time before signalling it, then erases only the recorded child beneath the Workbench test-session directory.
 - Nested shell configuration disables discovered first-party plugins and idle locking, then enables only the registered project plugin. The plugin source remains a live link for development.
 - The QML panel constructs process commands as arrays and never interpolates a project id or path into shell source.
+- Update discovery examines at most 128 normal direct children of Omarchy's plugins directory, ignores symlinks and non-Git installs, invokes Git without a shell, and bounds command time and output.
+- Updates require an explicit reviewed 40-character revision and confirmation. They refuse dirty, locally ahead, diverged, moved-local, and moved-remote states.
+- A reviewed update fast-forwards only to the pinned object. Omarchy validation runs before the requested shell rescan; failure resets the checkout to its exact preceding revision, and rescan occurs only after validation succeeds.
 - The bundled x86-64 helper is an intentional reviewed binary. CI builds and tests the locked source, then independently verifies the committed executable's recorded SHA-256 and version. Native linker output is not claimed to be reproducible across build environments.
 
 ## Important limitation
 
 Trusted project commands and enabled Omarchy plugins execute with the current user's permissions. A script can invoke its own shell, use the network, write outside the project, or access anything the user can access. Capability approval and trust are review boundaries, not confinement.
+
+Update discovery contacts the configured Git remote. Git configuration and credentials are part of the user's existing trust boundary. Applying an update changes an installed checkout; filesystem watchers may observe those files before validation completes, and newly updated plugin code may run during shell rescan.
 
 The disposable test window has the same limitation. It is a nested compositor with configuration/state separation, not a VM, container, user namespace, seccomp policy, or permission sandbox. It shares the user's kernel identity and may reach host files, network, D-Bus, PipeWire, secrets available to the user, and other session services. A malicious plugin can also deliberately escape its assigned process group. Test only code you are willing to run as your user.
 
@@ -38,6 +43,7 @@ Workbench does not:
 - Elevate privileges.
 - Install system packages or systemd services.
 - Execute plugin install/update hooks.
+- Schedule or apply unattended updates.
 - Publish, submit, tag, or push repositories.
 - Delete project checkouts.
 - Delete session worktrees or branches when a session is closed.

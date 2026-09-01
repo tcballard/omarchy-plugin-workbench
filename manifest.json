@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "author": "Tom Ballard",
   "license": "MIT",
-  "description": "Develop, validate, deploy, test, inspect, and roll back local Omarchy plugins.",
+  "description": "Build, validate, test, deploy, maintain, and update Omarchy plugins.",
   "kinds": [
     "bar-widget"
   ],

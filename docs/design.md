@@ -6,6 +6,14 @@ Plugin Workbench is a local control plane for explicit plugin projects. It coord
 
 The native QML surface remains thin. The Rust helper owns filesystem boundaries, manifest parsing, process lifecycle, deployment receipts, and stable JSON responses.
 
+## Installed plugin updates
+
+Update management is independent of the explicit development-project registry. Discovery is restricted to bounded, normal Git checkouts immediately beneath Omarchy's documented plugins directory; live links and non-Git installs remain outside this path.
+
+The review step fetches `origin/HEAD`, classifies the checkout as up to date, update available, dirty, locally ahead, diverged, or failed, and returns bounded incoming commit and diff-stat evidence. Only a clean fast-forward is actionable.
+
+Application carries the reviewed full object id back into the helper. The helper fetches and classifies again, rejects remote or local movement, and merges the exact reviewed object rather than a moving branch name. It then delegates contract checking to `omarchy plugin validate`, resets to the exact preceding revision on validation failure, and invokes one shell rescan after a successful batch. There is no timer, background service, or unattended policy.
+
 ## Deployment states
 
 | State | Meaning |
