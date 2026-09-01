@@ -191,17 +191,11 @@ pub fn submission_draft(
     if let Some(collision) = &collision {
         blockers.push(collision.clone());
     }
-    let answer = |value: Option<&str>| {
-        value
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .unwrap_or("_No response_")
-    };
     let body = format!(
         "### Repository URL\n\n{repository}\n\n### Category\n\n{category}\n\n### Tags\n\n{}\n\n### Suggest a missing tag\n\n{}\n\n### Maintainer notes\n\n{}\n\n### Submission checklist\n\n- [x] The repository is public and contains installation and removal instructions.\n- [x] I have documented the plugin license and any external dependencies.\n- [x] I confirm that I own or have permission to submit this plugin and its preview assets.\n- [x] The plugin does not overwrite user configuration without explicit consent.\n- [x] I understand that approval is for listing and is not a security review.\n",
         unique_tags.join(", "),
-        answer(suggested_tag),
-        answer(notes)
+        form_answer(suggested_tag),
+        form_answer(notes)
     );
     if body.len() > MAX_DRAFT_BYTES {
         bail!("marketplace submission draft exceeds its size boundary");
@@ -282,6 +276,13 @@ fn validate_github_repository(repository: &str) -> Result<()> {
 
 fn has_named_file(root: &Path, names: &[&str]) -> bool {
     names.iter().any(|name| root.join(name).is_file())
+}
+
+fn form_answer(value: Option<&str>) -> &str {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("_No response_")
 }
 
 fn write_json(path: &Path, value: &impl Serialize) -> Result<()> {
