@@ -45,6 +45,16 @@ Each task session owns a `codex/*` branch and Git worktree beneath private Workb
 
 Structured handoffs describe work rather than a particular agent protocol. Evidence records bind an operation result to revision, dirty state, platform, and time. Release readiness consumes that evidence but performs no release mutation.
 
+## Disposable nested runtime
+
+A test session launches `Hyprland --config` as a Wayland client of the active desktop, discovers the new compositor by its exact PID through `hyprctl instances -j`, and launches a separate Quickshell process against that compositor's socket. No Omarchy autostart file is loaded.
+
+The session owns a private tree beneath `test-sessions/`: HOME, XDG persistent state, generated Hyprland config, minimal `shell.json`, a bounded-lifetime log, and a process-identity receipt. The host `XDG_RUNTIME_DIR` remains in use because the nested compositor must connect to the outer Wayland socket. The project plugin is the only live link inside the temporary HOME.
+
+Each child is a process-group leader. Shutdown compares both `/proc/<pid>/stat` start times with the receipt before sending TERM and, after a bounded grace period, KILL. Cleanup refuses the parent directory and symlink roots. The whole session tree is removed after stop, so crash logs are intentionally ephemeral unless copied before stopping.
+
+This boundary protects the active Omarchy shell and its configuration from accidental development failures. It does not confine same-user plugin behavior.
+
 ## Authoring companion boundary
 
 Build Omarchy Plugins is a separately versioned Agent Plugin, not an Omarchy

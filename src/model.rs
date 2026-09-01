@@ -178,6 +178,7 @@ pub struct ProjectStatus {
     pub workflows: usize,
     pub environment_requirements: usize,
     pub active_sessions: usize,
+    pub active_test_sessions: usize,
     pub project_checks_trusted: bool,
     pub definition_changed_since_trust: bool,
 }
@@ -233,6 +234,32 @@ pub struct SessionRecord {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct TestSessionRecord {
+    pub schema_version: u32,
+    pub id: String,
+    pub project_id: String,
+    pub root: PathBuf,
+    pub compositor_pid: u32,
+    pub compositor_start_ticks: u64,
+    pub shell_pid: u32,
+    pub shell_start_ticks: u64,
+    pub hyprland_instance: String,
+    pub wayland_display: String,
+    pub started_at_unix: u64,
+    pub live_source: bool,
+    pub isolation: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TestSessionStatus {
+    #[serde(flatten)]
+    pub session: TestSessionRecord,
+    pub running: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct HandoffRecord {
     pub schema_version: u32,
     pub session_id: String,
@@ -275,6 +302,7 @@ pub struct ReleaseReadinessReport {
     pub current_revision_has_passing_checks: bool,
     pub tag_exists: bool,
     pub active_sessions: usize,
+    pub active_test_sessions: usize,
     pub blockers: Vec<String>,
 }
 

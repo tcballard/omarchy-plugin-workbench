@@ -71,6 +71,7 @@ pub fn project_status(
         workflows: project.workflows.len(),
         environment_requirements: project.environment.len(),
         active_sessions: crate::coordination::active_session_count(paths, &project.id)?,
+        active_test_sessions: crate::test_session::active_count(paths, &project.id)?,
         project_checks_trusted: project.project_checks_trusted,
         definition_changed_since_trust: project.project_checks_trusted
             && !crate::registry::definition_is_trusted(project)?,
@@ -267,6 +268,7 @@ pub fn release_readiness(paths: &AppPaths, project: &Project) -> Result<ReleaseR
     let tag_exists = tag_result.ok && tag_result.output.lines().any(|line| line == tag);
     let passing = crate::coordination::has_passing_checks(paths, project, git.revision.as_deref())?;
     let active_sessions = crate::coordination::active_session_count(paths, &project.id)?;
+    let active_test_sessions = crate::test_session::active_count(paths, &project.id)?;
     let mut blockers = Vec::new();
     if git.revision.is_none() {
         blockers.push("project is not at a Git commit".to_owned());
@@ -283,6 +285,9 @@ pub fn release_readiness(paths: &AppPaths, project: &Project) -> Result<ReleaseR
     if active_sessions > 0 {
         blockers.push("one or more work sessions are still active".to_owned());
     }
+    if active_test_sessions > 0 {
+        blockers.push("one or more nested test sessions are still active".to_owned());
+    }
     let report = ReleaseReadinessReport {
         ok: blockers.is_empty(),
         project_id: project.id.clone(),
@@ -293,6 +298,7 @@ pub fn release_readiness(paths: &AppPaths, project: &Project) -> Result<ReleaseR
         current_revision_has_passing_checks: passing,
         tag_exists,
         active_sessions,
+        active_test_sessions,
         blockers,
     };
     let evidence = crate::coordination::evidence_record(
@@ -392,6 +398,9 @@ pub fn doctor(paths: &AppPaths) -> DoctorReport {
         ("omarchy-shell", vec!["shell", "ping"]),
         ("qmllint", vec!["--version"]),
         ("qs", vec!["--version"]),
+        ("Hyprland", vec!["--version"]),
+        ("hyprctl", vec!["version"]),
+        ("quickshell", vec!["--version"]),
     ] {
         tools.insert(name.to_owned(), capture_tool(name, &args, None));
     }
