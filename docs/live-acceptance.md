@@ -32,6 +32,9 @@ qmllint -I "$OMARCHY_PATH/shell" BarWidget.qml Panel.qml
 - Register valid root and nested plugin projects from the panel.
 - Open Marketplace, refresh the production catalogue, and search by text plus each built-in, verified, and installable filter.
 - Install and enable one reviewed community listing; confirm its displayed commit equals installed `HEAD` and its panel state changes to installed.
+- Refresh after a newer reviewed snapshot, apply it, and confirm `HEAD`, the ownership receipt and panel status all move to the same exact commit.
+- Repair a deliberately damaged managed checkout and confirm the prior directory remains recoverable in Workbench trash.
+- Use the two-step uninstall control and confirm the target disappears, the receipt is removed and the recovery copy remains.
 - Change the cached listing between review and install and confirm Workbench refuses it without creating a target.
 - Verify malformed, reserved-id, symlinked, and missing-entry-point projects fail visibly.
 - Run Validate and Test, including an untrusted-check refusal.

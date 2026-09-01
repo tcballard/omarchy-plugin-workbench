@@ -25,6 +25,8 @@ Panel {
   property bool marketplaceBuiltInsOnly: false
   property bool marketplaceVerifiedOnly: false
   property bool marketplaceInstallableOnly: false
+  property bool marketplaceInstalledOnly: false
+  property string marketplaceConfirmation: ""
   property string message: ""
   property bool messageError: false
   property string refreshOutput: ""
@@ -178,6 +180,7 @@ Panel {
     if (root.marketplaceBuiltInsOnly) command.push("--built-in")
     if (root.marketplaceVerifiedOnly) command.push("--verified")
     if (root.marketplaceInstallableOnly) command.push("--installable")
+    if (root.marketplaceInstalledOnly) command.push("--installed")
     command.push("--limit")
     command.push("50")
     command.push("--json")
@@ -195,6 +198,31 @@ Panel {
     actionProcess.command = [root.helperPath, "marketplace-install", plugin.id,
       "--repo", plugin.repo, "--revision", plugin.reviewedRevision,
       "--enable", "--yes", "--json"]
+    actionProcess.running = true
+  }
+
+  function updateMarketplace(plugin) {
+    if (root.busy || !root.helperPath || !plugin.managed || !plugin.updateAvailable) return
+    root.pendingAction = "marketplace-update"
+    root.message = "Applying reviewed marketplace update for " + plugin.name + "…"
+    root.messageError = false
+    actionProcess.command = [root.helperPath, "marketplace-update", plugin.id,
+      "--revision", plugin.reviewedRevision, "--yes", "--json"]
+    actionProcess.running = true
+  }
+
+  function confirmedMarketplaceAction(action, plugin) {
+    var key = action + ":" + plugin.id
+    if (root.marketplaceConfirmation !== key) {
+      root.marketplaceConfirmation = key
+      root.message = "Click “Confirm " + action + "” again for " + plugin.name
+      root.messageError = false
+      return
+    }
+    root.marketplaceConfirmation = ""
+    root.pendingAction = "marketplace-" + action
+    root.message = (action === "repair" ? "Repairing " : "Uninstalling ") + plugin.name + "…"
+    actionProcess.command = [root.helperPath, "marketplace-" + action, plugin.id, "--yes", "--json"]
     actionProcess.running = true
   }
 
@@ -239,7 +267,7 @@ Panel {
     if (exitCode === 0) {
       pathInput.text = ""
       if (root.pendingAction === "update") Qt.callLater(root.checkUpdates)
-      else if (root.pendingAction === "marketplace-install") Qt.callLater(root.searchMarketplace)
+      else if (root.pendingAction.indexOf("marketplace-") === 0) Qt.callLater(root.searchMarketplace)
       else Qt.callLater(root.refresh)
     }
     root.pendingAction = ""
@@ -341,7 +369,6 @@ Panel {
               enabled: !root.busy
               onTriggered: root.toggleMarketplace()
             }
-
             WorkbenchButton {
               id: updatesButton
               visible: !root.marketplaceOpen
@@ -477,6 +504,13 @@ Panel {
               label: root.marketplaceInstallableOnly ? "Installable ✓" : "Installable"
               onTriggered: {
                 root.marketplaceInstallableOnly = !root.marketplaceInstallableOnly
+                root.searchMarketplace()
+              }
+            }
+            WorkbenchButton {
+              label: root.marketplaceInstalledOnly ? "Installed ✓" : "Installed"
+              onTriggered: {
+                root.marketplaceInstalledOnly = !root.marketplaceInstalledOnly
                 root.searchMarketplace()
               }
             }
@@ -930,7 +964,7 @@ Panel {
         width: parent.width
         spacing: Style.space(8)
         Column {
-          width: parent.width - marketplaceInstallButton.width - Style.space(8)
+          width: parent.width - marketplaceActions.width - Style.space(8)
           spacing: Style.space(2)
           Text {
             width: parent.width
@@ -951,12 +985,35 @@ Panel {
             elide: Text.ElideRight
           }
         }
-        WorkbenchButton {
-          id: marketplaceInstallButton
-          visible: marketplaceCard.plugin.installable
-          label: "Install & enable"
-          enabled: !root.busy
-          onTriggered: root.installMarketplace(marketplaceCard.plugin)
+        Row {
+          id: marketplaceActions
+          spacing: Style.space(5)
+          WorkbenchButton {
+            visible: marketplaceCard.plugin.installable
+            label: "Install & enable"
+            enabled: !root.busy
+            onTriggered: root.installMarketplace(marketplaceCard.plugin)
+          }
+          WorkbenchButton {
+            visible: marketplaceCard.plugin.managed && marketplaceCard.plugin.updateAvailable
+            label: "Update"
+            enabled: !root.busy
+            onTriggered: root.updateMarketplace(marketplaceCard.plugin)
+          }
+          WorkbenchButton {
+            visible: marketplaceCard.plugin.managed
+            label: root.marketplaceConfirmation === "repair:" + marketplaceCard.plugin.id
+              ? "Confirm repair" : "Repair"
+            enabled: !root.busy
+            onTriggered: root.confirmedMarketplaceAction("repair", marketplaceCard.plugin)
+          }
+          WorkbenchButton {
+            visible: marketplaceCard.plugin.managed
+            label: root.marketplaceConfirmation === "uninstall:" + marketplaceCard.plugin.id
+              ? "Confirm uninstall" : "Uninstall"
+            enabled: !root.busy
+            onTriggered: root.confirmedMarketplaceAction("uninstall", marketplaceCard.plugin)
+          }
         }
       }
 
@@ -984,6 +1041,9 @@ Panel {
       Text {
         width: parent.width
         text: marketplaceCard.plugin.builtIn ? "BUILT IN"
+          : marketplaceCard.plugin.managed
+            ? "WORKBENCH MANAGED"
+              + (marketplaceCard.plugin.updateAvailable ? "  ·  UPDATE AVAILABLE" : "")
           : marketplaceCard.plugin.installed ? "INSTALLED"
           : String(marketplaceCard.plugin.verificationStatus || "unverified").toUpperCase()
             + (marketplaceCard.plugin.reviewedRevision

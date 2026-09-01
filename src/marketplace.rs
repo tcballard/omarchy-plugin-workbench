@@ -7,8 +7,9 @@ use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::fs::{self, OpenOptions};
+use std::io::Write;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 const CATALOG_URL: &str = "https://omarchyplugins.com/catalog.json";
 const CATALOG_SCHEMA: u32 = 2;
@@ -17,6 +18,8 @@ const MAX_CATALOG_PLUGINS: usize = 5_000;
 const MAX_SEARCH_LIMIT: usize = 100;
 const NETWORK_TIMEOUT_SECONDS: u64 = 90;
 const INSTALL_TIMEOUT_SECONDS: u64 = 300;
+const RECEIPT_SCHEMA: u32 = 1;
+const MAX_RECEIPT_BYTES: u64 = 64 * 1024;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -119,7 +122,10 @@ pub struct MarketplacePlugin {
     pub source_type: String,
     pub built_in: bool,
     pub installed: bool,
+    pub managed: bool,
     pub installable: bool,
+    pub managed_revision: Option<String>,
+    pub update_available: bool,
     pub verification_status: String,
     pub verification_snapshot_status: String,
     pub verification_coverage: String,
@@ -139,6 +145,52 @@ pub struct InstallReport {
     pub revision: String,
     pub installed: bool,
     pub enabled: bool,
+    pub message: String,
+    pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MarketplaceReceipt {
+    pub schema_version: u32,
+    pub plugin_id: String,
+    pub repo: String,
+    pub installed_revision: String,
+    pub installed_at_unix: u64,
+    pub updated_at_unix: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManagedPlugin {
+    pub id: String,
+    pub repo: String,
+    pub installed_revision: String,
+    pub catalogue_revision: Option<String>,
+    pub state: String,
+    pub update_available: bool,
+    pub installed_at_unix: u64,
+    pub updated_at_unix: u64,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManagedReport {
+    pub ok: bool,
+    pub managed: usize,
+    pub updates_available: usize,
+    pub plugins: Vec<ManagedPlugin>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LifecycleReport {
+    pub ok: bool,
+    pub action: String,
+    pub plugin_id: String,
+    pub revision: Option<String>,
+    pub retained_backup: Option<String>,
     pub message: String,
     pub warnings: Vec<String>,
 }
@@ -365,6 +417,19 @@ pub fn install(
             bail!("plugin target appeared during installation; refusing to replace it");
         }
         fs::rename(&stage, &target).context("publish reviewed plugin checkout")?;
+        let installed_at_unix = now_unix();
+        let receipt = MarketplaceReceipt {
+            schema_version: RECEIPT_SCHEMA,
+            plugin_id: id.to_owned(),
+            repo: reviewed_repo.to_owned(),
+            installed_revision: reviewed_revision.to_owned(),
+            installed_at_unix,
+            updated_at_unix: installed_at_unix,
+        };
+        if let Err(error) = save_receipt(paths, &receipt) {
+            let _ = fs::remove_dir_all(&target);
+            return Err(error).context("record managed marketplace installation");
+        }
         Ok(())
     })();
     if let Err(error) = install_result {
@@ -405,6 +470,539 @@ pub fn install(
         message,
         warnings,
     })
+}
+
+pub fn managed(paths: &AppPaths) -> Result<ManagedReport> {
+    let catalog = read_catalog(paths).ok();
+    let mut plugins = load_receipts(paths)?
+        .into_iter()
+        .map(|receipt| inspect_managed(paths, catalog.as_ref(), receipt))
+        .collect::<Vec<_>>();
+    plugins.sort_by(|left, right| left.id.cmp(&right.id));
+    let updates_available = plugins
+        .iter()
+        .filter(|plugin| plugin.update_available)
+        .count();
+    Ok(ManagedReport {
+        ok: plugins.iter().all(|plugin| plugin.error.is_none()),
+        managed: plugins.len(),
+        updates_available,
+        plugins,
+    })
+}
+
+pub fn is_managed(paths: &AppPaths, id: &str) -> bool {
+    receipt_path(paths, id).is_file()
+}
+
+pub fn submission_collision(paths: &AppPaths, id: &str, repo: &str) -> Result<Option<String>> {
+    let catalog = read_catalog(paths)?;
+    Ok(catalog.plugins.iter().find_map(|plugin| {
+        if plugin.id == id {
+            Some(format!(
+                "plugin id '{id}' is already listed from {}",
+                plugin.repo
+            ))
+        } else if plugin.repo.trim_end_matches(".git") == repo.trim_end_matches(".git") {
+            Some(format!(
+                "repository is already listed as plugin '{}'",
+                plugin.id
+            ))
+        } else {
+            None
+        }
+    }))
+}
+
+pub fn update_managed(
+    paths: &AppPaths,
+    id: &str,
+    reviewed_revision: &str,
+    confirmed: bool,
+) -> Result<LifecycleReport> {
+    require_lifecycle_confirmation(confirmed, "update")?;
+    validate_plugin_id(id)?;
+    validate_revision(reviewed_revision)?;
+    for command in ["git", "omarchy", "omarchy-shell"] {
+        if !command_exists(command) {
+            bail!("{command} is required to update marketplace plugins");
+        }
+    }
+    let catalog = read_catalog(paths)?;
+    let listing = catalog
+        .plugins
+        .iter()
+        .find(|plugin| plugin.id == id)
+        .with_context(|| format!("plugin '{id}' is not in the cached marketplace catalogue"))?;
+    if listing.listing_validated_commit != reviewed_revision {
+        bail!("marketplace entry changed since review; refresh and review again");
+    }
+    let _lock = RegistryLock::acquire(paths)?;
+    let mut receipt = load_receipt(paths, id)?
+        .with_context(|| format!("plugin '{id}' is not managed by Workbench"))?;
+    if receipt.repo != listing.repo {
+        bail!("managed repository differs from the current catalogue listing");
+    }
+    let directory = verified_managed_target(paths, &receipt)?;
+    let current = git_stdout(paths, &directory, &["rev-parse", "HEAD"])?;
+    if current != receipt.installed_revision {
+        bail!("installed revision drifted from the Workbench receipt");
+    }
+    if !git_stdout(
+        paths,
+        &directory,
+        &["status", "--porcelain", "--untracked-files=normal"],
+    )?
+    .is_empty()
+    {
+        bail!("managed plugin has local changes; repair or preserve them manually");
+    }
+    if current == reviewed_revision {
+        return Ok(LifecycleReport {
+            ok: true,
+            action: "marketplace-update".to_owned(),
+            plugin_id: id.to_owned(),
+            revision: Some(current),
+            retained_backup: None,
+            message: format!("{id} is already at the reviewed marketplace revision"),
+            warnings: Vec::new(),
+        });
+    }
+    let fetch = run_git(
+        paths,
+        &directory,
+        &["fetch", "--quiet", "origin", reviewed_revision],
+    )?;
+    if !fetch.ok {
+        bail!(
+            "could not fetch reviewed revision: {}",
+            check_output(&fetch)
+        );
+    }
+    let ancestry = run_git(
+        paths,
+        &directory,
+        &["merge-base", "--is-ancestor", &current, reviewed_revision],
+    )?;
+    if !ancestry.ok {
+        bail!("reviewed marketplace revision is not a fast-forward from the installed snapshot");
+    }
+    let merge = run_git(
+        paths,
+        &directory,
+        &["merge", "--ff-only", reviewed_revision],
+    )?;
+    if !merge.ok {
+        bail!(
+            "could not apply reviewed revision: {}",
+            check_output(&merge)
+        );
+    }
+    if let Err(error) = validate_managed_checkout(paths, id, &directory, reviewed_revision) {
+        let _ = run_git(paths, &directory, &["reset", "--hard", &current]);
+        bail!("marketplace update failed validation and was rolled back: {error:#}");
+    }
+    receipt.installed_revision = reviewed_revision.to_owned();
+    receipt.updated_at_unix = now_unix();
+    if let Err(error) = save_receipt(paths, &receipt) {
+        let _ = run_git(paths, &directory, &["reset", "--hard", &current]);
+        return Err(error).context("update marketplace ownership receipt; checkout rolled back");
+    }
+    rescan_shell(paths)?;
+    Ok(LifecycleReport {
+        ok: true,
+        action: "marketplace-update".to_owned(),
+        plugin_id: id.to_owned(),
+        revision: Some(reviewed_revision.to_owned()),
+        retained_backup: None,
+        message: format!("Updated {id} to reviewed marketplace revision {reviewed_revision}"),
+        warnings: Vec::new(),
+    })
+}
+
+pub fn repair(paths: &AppPaths, id: &str, confirmed: bool) -> Result<LifecycleReport> {
+    require_lifecycle_confirmation(confirmed, "repair")?;
+    validate_plugin_id(id)?;
+    for command in ["git", "omarchy", "omarchy-shell"] {
+        if !command_exists(command) {
+            bail!("{command} is required to repair marketplace plugins");
+        }
+    }
+    let catalog = read_catalog(paths)?;
+    let listing = catalog
+        .plugins
+        .iter()
+        .find(|plugin| plugin.id == id)
+        .with_context(|| format!("plugin '{id}' is not in the cached marketplace catalogue"))?;
+    if !is_installable(listing) {
+        bail!("plugin '{id}' is no longer an installable marketplace root plugin");
+    }
+    let _lock = RegistryLock::acquire(paths)?;
+    let receipt = load_receipt(paths, id)?
+        .with_context(|| format!("plugin '{id}' is not managed by Workbench"))?;
+    if receipt.repo != listing.repo {
+        bail!("managed repository differs from the current catalogue listing");
+    }
+    ensure_plugins_directory(&paths.plugins_dir)?;
+    let target = paths.plugins_dir.join(id);
+    let backup = if target.exists() || target.is_symlink() {
+        let metadata = fs::symlink_metadata(&target)?;
+        if metadata.file_type().is_symlink() || !metadata.is_dir() {
+            bail!("managed target is not a normal directory; refusing repair");
+        }
+        let backup = paths
+            .marketplace_trash_dir
+            .join(format!("{id}.repair.{}", now_unix()));
+        fs::rename(&target, &backup).context("retain pre-repair marketplace checkout")?;
+        Some(backup)
+    } else {
+        None
+    };
+    let revision = listing.listing_validated_commit.clone();
+    if let Err(error) = clone_reviewed(paths, id, &listing.repo, &revision, &target) {
+        if let Some(backup) = &backup {
+            let _ = fs::rename(backup, &target);
+        }
+        return Err(error).context("repair marketplace plugin; previous checkout restored");
+    }
+    let repaired = MarketplaceReceipt {
+        schema_version: RECEIPT_SCHEMA,
+        plugin_id: id.to_owned(),
+        repo: listing.repo.clone(),
+        installed_revision: revision.clone(),
+        installed_at_unix: receipt.installed_at_unix,
+        updated_at_unix: now_unix(),
+    };
+    save_receipt(paths, &repaired)?;
+    rescan_shell(paths)?;
+    Ok(LifecycleReport {
+        ok: true,
+        action: "marketplace-repair".to_owned(),
+        plugin_id: id.to_owned(),
+        revision: Some(revision),
+        retained_backup: backup.map(|path| path.display().to_string()),
+        message: format!("Repaired {id} from the latest reviewed marketplace snapshot"),
+        warnings: Vec::new(),
+    })
+}
+
+pub fn uninstall(paths: &AppPaths, id: &str, confirmed: bool) -> Result<LifecycleReport> {
+    require_lifecycle_confirmation(confirmed, "uninstall")?;
+    validate_plugin_id(id)?;
+    let _lock = RegistryLock::acquire(paths)?;
+    let receipt = load_receipt(paths, id)?
+        .with_context(|| format!("plugin '{id}' is not managed by Workbench"))?;
+    let target = paths.plugins_dir.join(id);
+    let backup = if target.exists() || target.is_symlink() {
+        let metadata = fs::symlink_metadata(&target)?;
+        if metadata.file_type().is_symlink() || !metadata.is_dir() {
+            bail!("managed target is not a normal directory; refusing uninstall");
+        }
+        let backup = paths
+            .marketplace_trash_dir
+            .join(format!("{id}.uninstall.{}", now_unix()));
+        fs::rename(&target, &backup).context("retain uninstalled marketplace checkout")?;
+        Some(backup)
+    } else {
+        None
+    };
+    let mut warnings = Vec::new();
+    if command_exists("omarchy") {
+        let disable = run_tool(
+            paths,
+            "disable-marketplace-plugin",
+            vec![
+                "omarchy".to_owned(),
+                "plugin".to_owned(),
+                "disable".to_owned(),
+                id.to_owned(),
+            ],
+            60,
+        );
+        if let Ok(result) = disable
+            && !result.ok
+        {
+            warnings.push(format!(
+                "plugin was removed but disable failed: {}",
+                check_output(&result)
+            ));
+        }
+    }
+    remove_receipt(paths, id)?;
+    if command_exists("omarchy-shell")
+        && let Err(error) = rescan_shell(paths)
+    {
+        warnings.push(format!(
+            "plugin was removed but shell rescan failed: {error:#}"
+        ));
+    }
+    Ok(LifecycleReport {
+        ok: true,
+        action: "marketplace-uninstall".to_owned(),
+        plugin_id: id.to_owned(),
+        revision: Some(receipt.installed_revision),
+        retained_backup: backup.map(|path| path.display().to_string()),
+        message: format!("Uninstalled {id}; the previous checkout was retained for recovery"),
+        warnings,
+    })
+}
+
+fn inspect_managed(
+    paths: &AppPaths,
+    catalog: Option<&Catalog>,
+    receipt: MarketplaceReceipt,
+) -> ManagedPlugin {
+    let catalogue_revision = catalog.and_then(|catalog| {
+        catalog
+            .plugins
+            .iter()
+            .find(|plugin| plugin.id == receipt.plugin_id && plugin.repo == receipt.repo)
+            .and_then(|plugin| nonempty(&plugin.listing_validated_commit))
+    });
+    let target = paths.plugins_dir.join(&receipt.plugin_id);
+    let inspected = (|| -> Result<(String, bool)> {
+        let metadata = fs::symlink_metadata(&target).context("managed target is missing")?;
+        if metadata.file_type().is_symlink() || !metadata.is_dir() {
+            bail!("managed target is not a normal directory");
+        }
+        let manifest = manifest::validate_plugin(&target)?;
+        if manifest.id != receipt.plugin_id {
+            bail!("installed manifest id differs from its receipt");
+        }
+        if !command_exists("git") {
+            bail!("git is unavailable");
+        }
+        let revision = git_stdout(paths, &target, &["rev-parse", "HEAD"])?;
+        let dirty = !git_stdout(
+            paths,
+            &target,
+            &["status", "--porcelain", "--untracked-files=normal"],
+        )?
+        .is_empty();
+        Ok((revision, dirty))
+    })();
+    let (state, update_available, error) = match inspected {
+        Ok((revision, _)) if revision != receipt.installed_revision => (
+            "drifted".to_owned(),
+            false,
+            Some("installed revision differs from its ownership receipt".to_owned()),
+        ),
+        Ok((_, true)) => (
+            "local-changes".to_owned(),
+            false,
+            Some("installed checkout has local changes".to_owned()),
+        ),
+        Ok((_, false)) if catalogue_revision.as_deref() == Some(&receipt.installed_revision) => {
+            ("current".to_owned(), false, None)
+        }
+        Ok((_, false)) if catalogue_revision.is_some() => {
+            ("update-available".to_owned(), true, None)
+        }
+        Ok((_, false)) => ("catalogue-missing".to_owned(), false, None),
+        Err(error) => ("drifted".to_owned(), false, Some(format!("{error:#}"))),
+    };
+    ManagedPlugin {
+        id: receipt.plugin_id,
+        repo: receipt.repo,
+        installed_revision: receipt.installed_revision,
+        catalogue_revision,
+        state,
+        update_available,
+        installed_at_unix: receipt.installed_at_unix,
+        updated_at_unix: receipt.updated_at_unix,
+        error,
+    }
+}
+
+fn clone_reviewed(
+    paths: &AppPaths,
+    id: &str,
+    repo: &str,
+    revision: &str,
+    target: &Path,
+) -> Result<()> {
+    if target.exists() || target.is_symlink() {
+        bail!("plugin target already exists");
+    }
+    let stage = paths.plugins_dir.join(format!(
+        ".workbench-marketplace.{}.{}",
+        std::process::id(),
+        now_unix()
+    ));
+    if stage.exists() || stage.is_symlink() {
+        bail!("marketplace staging path already exists");
+    }
+    let result = (|| -> Result<()> {
+        let clone = run_git(
+            paths,
+            &paths.plugins_dir,
+            &[
+                "clone",
+                "--no-checkout",
+                "--",
+                repo,
+                &stage.to_string_lossy(),
+            ],
+        )?;
+        if !clone.ok {
+            bail!(
+                "could not clone reviewed repository: {}",
+                check_output(&clone)
+            );
+        }
+        let checkout = run_git(paths, &stage, &["checkout", "--detach", revision])?;
+        if !checkout.ok {
+            bail!(
+                "reviewed revision is unavailable: {}",
+                check_output(&checkout)
+            );
+        }
+        validate_managed_checkout(paths, id, &stage, revision)?;
+        if target.exists() || target.is_symlink() {
+            bail!("plugin target appeared during installation");
+        }
+        fs::rename(&stage, target).context("publish repaired marketplace checkout")?;
+        Ok(())
+    })();
+    if result.is_err() {
+        remove_owned_stage(&paths.plugins_dir, &stage);
+    }
+    result
+}
+
+fn validate_managed_checkout(
+    paths: &AppPaths,
+    id: &str,
+    directory: &Path,
+    revision: &str,
+) -> Result<()> {
+    if git_stdout(paths, directory, &["rev-parse", "HEAD"])? != revision {
+        bail!("Git did not check out the reviewed revision");
+    }
+    let validated = manifest::validate_plugin(directory)?;
+    if validated.id != id {
+        bail!(
+            "reviewed manifest id '{}' does not match '{id}'",
+            validated.id
+        );
+    }
+    validate_with_omarchy(paths, directory)
+}
+
+fn require_lifecycle_confirmation(confirmed: bool, action: &str) -> Result<()> {
+    if !confirmed {
+        bail!("refusing to {action} without explicit confirmation; pass --yes after review");
+    }
+    Ok(())
+}
+
+fn receipt_path(paths: &AppPaths, id: &str) -> PathBuf {
+    paths.marketplace_receipts_dir.join(format!("{id}.json"))
+}
+
+fn load_receipts(paths: &AppPaths) -> Result<Vec<MarketplaceReceipt>> {
+    let mut receipts = Vec::new();
+    let mut entries = 0usize;
+    for entry in fs::read_dir(&paths.marketplace_receipts_dir)
+        .context("read marketplace ownership receipts")?
+    {
+        let entry = entry?;
+        entries += 1;
+        if entries > 128 {
+            bail!("marketplace ownership receipt count exceeds 128");
+        }
+        let metadata = fs::symlink_metadata(entry.path())?;
+        if metadata.file_type().is_symlink() || !metadata.is_file() {
+            bail!("marketplace ownership receipt is not a normal file");
+        }
+        if entry.path().extension().and_then(|value| value.to_str()) != Some("json") {
+            continue;
+        }
+        receipts.push(read_receipt_path(&entry.path())?);
+    }
+    Ok(receipts)
+}
+
+fn load_receipt(paths: &AppPaths, id: &str) -> Result<Option<MarketplaceReceipt>> {
+    let path = receipt_path(paths, id);
+    if !path.exists() && !path.is_symlink() {
+        return Ok(None);
+    }
+    read_receipt_path(&path).map(Some)
+}
+
+fn read_receipt_path(path: &Path) -> Result<MarketplaceReceipt> {
+    let metadata = fs::symlink_metadata(path)?;
+    if metadata.file_type().is_symlink()
+        || !metadata.is_file()
+        || metadata.len() == 0
+        || metadata.len() > MAX_RECEIPT_BYTES
+    {
+        bail!("marketplace ownership receipt is not a bounded normal file");
+    }
+    let receipt: MarketplaceReceipt =
+        serde_json::from_slice(&fs::read(path)?).context("parse marketplace ownership receipt")?;
+    if receipt.schema_version != RECEIPT_SCHEMA {
+        bail!("unsupported marketplace ownership receipt schema");
+    }
+    validate_plugin_id(&receipt.plugin_id)?;
+    validate_github_repo(&receipt.repo)?;
+    validate_revision(&receipt.installed_revision)?;
+    Ok(receipt)
+}
+
+fn save_receipt(paths: &AppPaths, receipt: &MarketplaceReceipt) -> Result<()> {
+    secure_dir(&paths.marketplace_receipts_dir)?;
+    let path = receipt_path(paths, &receipt.plugin_id);
+    if path.is_symlink() {
+        bail!("marketplace ownership receipt path is a symlink");
+    }
+    let temporary = paths.marketplace_receipts_dir.join(format!(
+        ".{}.tmp.{}.{}",
+        receipt.plugin_id,
+        std::process::id(),
+        now_unix()
+    ));
+    let mut file = OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .mode(0o600)
+        .open(&temporary)?;
+    let result = (|| -> Result<()> {
+        serde_json::to_writer_pretty(&mut file, receipt)?;
+        file.write_all(b"\n")?;
+        file.sync_all()?;
+        fs::rename(&temporary, &path)?;
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600))?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result
+}
+
+fn remove_receipt(paths: &AppPaths, id: &str) -> Result<()> {
+    let path = receipt_path(paths, id);
+    let metadata = fs::symlink_metadata(&path)?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        bail!("marketplace ownership receipt is not a normal file");
+    }
+    fs::remove_file(path).context("remove marketplace ownership receipt")
+}
+
+fn verified_managed_target(paths: &AppPaths, receipt: &MarketplaceReceipt) -> Result<PathBuf> {
+    let target = paths.plugins_dir.join(&receipt.plugin_id);
+    let metadata = fs::symlink_metadata(&target)
+        .with_context(|| format!("managed plugin '{}' is missing", receipt.plugin_id))?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        bail!("managed marketplace target is not a normal directory");
+    }
+    let manifest = manifest::validate_plugin(&target)?;
+    if manifest.id != receipt.plugin_id {
+        bail!("managed marketplace target manifest id changed");
+    }
+    Ok(target)
 }
 
 fn read_catalog(paths: &AppPaths) -> Result<Catalog> {
@@ -523,6 +1121,14 @@ fn to_result(paths: &AppPaths, plugin: &CatalogPlugin) -> MarketplacePlugin {
     let installed = built_in
         || paths.plugins_dir.join(&plugin.id).exists()
         || paths.plugins_dir.join(&plugin.id).is_symlink();
+    let receipt = load_receipt(paths, &plugin.id).ok().flatten();
+    let managed_revision = receipt
+        .as_ref()
+        .map(|receipt| receipt.installed_revision.clone());
+    let managed = receipt.is_some();
+    let update_available = managed_revision
+        .as_deref()
+        .is_some_and(|revision| revision != plugin.listing_validated_commit);
     MarketplacePlugin {
         id: plugin.id.clone(),
         name: plugin.name.clone(),
@@ -537,7 +1143,10 @@ fn to_result(paths: &AppPaths, plugin: &CatalogPlugin) -> MarketplacePlugin {
         source_type: plugin.source_type.clone(),
         built_in,
         installed,
+        managed,
         installable: is_installable(plugin) && !installed,
+        managed_revision,
+        update_available,
         verification_status: plugin.verification_status.clone(),
         verification_snapshot_status: plugin.verification_snapshot_status.clone(),
         verification_coverage: plugin.verification_coverage.clone(),
