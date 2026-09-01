@@ -283,6 +283,9 @@ fn installed_git_plugins(
             if !valid_plugin_id(&id) {
                 continue;
             }
+            if crate::marketplace::is_managed(paths, &id) {
+                continue;
+            }
             let metadata = fs::symlink_metadata(entry.path())?;
             if metadata.file_type().is_symlink() || !metadata.is_dir() {
                 continue;
@@ -298,6 +301,11 @@ fn installed_git_plugins(
 
     if !valid_plugin_id(selected_id) {
         bail!("invalid plugin id '{selected_id}'");
+    }
+    if crate::marketplace::is_managed(paths, selected_id) {
+        bail!(
+            "plugin '{selected_id}' is marketplace-managed; use marketplace-managed and marketplace-update"
+        );
     }
     let directory = paths.plugins_dir.join(selected_id);
     let metadata = fs::symlink_metadata(&directory)

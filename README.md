@@ -31,7 +31,7 @@ The workbench does not scan your home directory, execute install hooks, invoke a
 
 ## Status
 
-This repository is a complete `0.1.0` implementation with automated Rust and lifecycle coverage. It is pinned to:
+This repository is a complete `0.2.0` implementation with automated Rust and lifecycle coverage. It is pinned to:
 
 - Omarchy Quattro contract: `b686ed892d9c3020c3336203f6d34cc75b544e2b`
 - Omarchy plugin manifest schema: `1`
@@ -78,6 +78,17 @@ bin/omarchy-plugin-workbench marketplace-install io.github.example.plugin \
 ```
 
 The catalogue is public network input protected by HTTPS, not a signed package index. A reviewed commit limits moving-target risk but does not make third-party code safe; enabling a plugin runs it with your user permissions.
+
+Workbench records every installation it creates. **Installed** shows the complete host view; **Workbench managed** listings can be updated only to the catalogue's next exact reviewed commit, repaired from that reviewed snapshot, or uninstalled with a recovery copy retained in private state. Marketplace-managed plugins are intentionally excluded from the separate mutable-remote update path.
+
+```bash
+bin/omarchy-plugin-workbench portfolio
+bin/omarchy-plugin-workbench marketplace-managed
+bin/omarchy-plugin-workbench marketplace-update io.github.example.plugin \
+  --revision FULL_REVIEWED_COMMIT --yes
+bin/omarchy-plugin-workbench marketplace-repair io.github.example.plugin --yes
+bin/omarchy-plugin-workbench marketplace-uninstall io.github.example.plugin --yes
+```
 
 ## Review and apply installed plugin updates
 
@@ -241,6 +252,20 @@ bin/omarchy-plugin-workbench evidence io.github.example.plugin --limit 20
 bin/omarchy-plugin-workbench release-check io.github.example.plugin
 ```
 
+## Release and marketplace submission preparation
+
+`release-plan` converts passing readiness evidence into an owner-only JSON plan containing the exact current revision, tag and reviewable argv arrays. It does not execute them. `submission-prepare` validates the root layout, README, licence, category, one-to-three official tags, cached ID/repository collisions and explicit confirmation of the five official checklist statements, then writes the current official issue body without creating a public issue.
+
+```bash
+bin/omarchy-plugin-workbench release-plan io.github.example.plugin
+bin/omarchy-plugin-workbench submission-prepare io.github.example.plugin \
+  --repo https://github.com/example/plugin \
+  --category "Developer Tools" --tag quickshell --tag bar \
+  --confirm-checklist
+```
+
+The final tag, push, GitHub release and marketplace issue remain explicit public actions. This prevents a local panel click or compromised project file from publishing under your identity.
+
 ## State and recovery
 
 | Path | Purpose |
@@ -254,6 +279,9 @@ bin/omarchy-plugin-workbench release-check io.github.example.plugin
 | `~/.local/state/omarchy/plugin-workbench/handoffs/` | Structured continuation records |
 | `~/.local/state/omarchy/plugin-workbench/evidence/` | Append-only per-project evidence ledgers |
 | `~/.local/state/omarchy/plugin-workbench/marketplace/catalog.json` | Explicitly refreshed official catalogue cache |
+| `~/.local/state/omarchy/plugin-workbench/marketplace/receipts/` | Workbench marketplace ownership and reviewed revisions |
+| `~/.local/state/omarchy/plugin-workbench/marketplace/trash/` | Recoverable repair/uninstall checkouts |
+| `~/.local/state/omarchy/plugin-workbench/publishing/` | Reviewable release plans and submission drafts |
 | `~/.config/omarchy/plugins/<plugin-id>` | Atomic symlink controlled by Workbench |
 
 Config, state, receipts, and captured check output use owner-only permissions. Snapshot directories are owner-only too.

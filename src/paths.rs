@@ -20,6 +20,9 @@ pub struct AppPaths {
     pub evidence_dir: PathBuf,
     pub marketplace_dir: PathBuf,
     pub marketplace_catalog_file: PathBuf,
+    pub marketplace_receipts_dir: PathBuf,
+    pub marketplace_trash_dir: PathBuf,
+    pub publishing_dir: PathBuf,
     pub lock_file: PathBuf,
 }
 
@@ -54,6 +57,9 @@ impl AppPaths {
             handoffs_dir: state_dir.join("handoffs"),
             evidence_dir: state_dir.join("evidence"),
             marketplace_catalog_file: marketplace_dir.join("catalog.json"),
+            marketplace_receipts_dir: marketplace_dir.join("receipts"),
+            marketplace_trash_dir: marketplace_dir.join("trash"),
+            publishing_dir: state_dir.join("publishing"),
             marketplace_dir,
             sessions_dir,
             config_dir,
@@ -72,6 +78,9 @@ impl AppPaths {
             &self.handoffs_dir,
             &self.evidence_dir,
             &self.marketplace_dir,
+            &self.marketplace_receipts_dir,
+            &self.marketplace_trash_dir,
+            &self.publishing_dir,
         ] {
             secure_dir(dir)?;
         }

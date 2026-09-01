@@ -12,6 +12,12 @@ Discovery consumes the marketplace's published production `catalog.json`, not re
 
 Built-ins are browse-only. A community listing is actionable only when the catalogue marks it installable, its repository is a root plugin on GitHub HTTPS, and it carries a full listing-validated commit. The panel carries the displayed repository and commit back to the helper. The helper compares both with the current cache, performs a detached checkout with hooks disabled, verifies `HEAD`, validates the manifest id and plugin contract, then atomically publishes the directory and asks Omarchy to rescan. This avoids executing marketplace-provided command strings and rejects a listing that changed after review.
 
+Successful installs create a separate ownership receipt. Only a normal directory whose manifest and Git revision still match that receipt is eligible for marketplace-managed mutation. A newer catalogue snapshot is applied only as an exact fast-forward and is rolled back on validation failure. Repair and uninstall retain the displaced owned directory under private trash; symlink or special-file drift is never followed or replaced.
+
+## Publishing boundary
+
+Release planning consumes current release-readiness evidence and emits exact inert argv arrays. Submission preparation mirrors the current official form and gates root layout, documentation, licence, taxonomy, cached collisions and owner checklist confirmation. These artifacts stop at the public-identity boundary: Workbench does not run tag/push/release commands or submit issues.
+
 ## Installed plugin updates
 
 Update management is independent of the explicit development-project registry. Discovery is restricted to bounded, normal Git checkouts immediately beneath Omarchy's documented plugins directory; live links and non-Git installs remain outside this path.

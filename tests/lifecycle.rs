@@ -182,6 +182,10 @@ const MARKETPLACE_REPO: &str = "https://github.com/acme/reviewed-plugin";
 const MARKETPLACE_REVISION: &str = "0123456789abcdef0123456789abcdef01234567";
 
 fn write_marketplace_catalog(harness: &Harness) -> PathBuf {
+    write_marketplace_catalog_at(harness, MARKETPLACE_REVISION)
+}
+
+fn write_marketplace_catalog_at(harness: &Harness, reviewed_revision: &str) -> PathBuf {
     let cache = harness
         .home
         .join(".local/state/omarchy/plugin-workbench/marketplace/catalog.json");
@@ -212,7 +216,7 @@ fn write_marketplace_catalog(harness: &Harness) -> PathBuf {
                     "verificationStatus": "verified",
                     "verificationSnapshotStatus": "current",
                     "verificationCoverage": "full",
-                    "listingValidatedCommit": MARKETPLACE_REVISION,
+                    "listingValidatedCommit": reviewed_revision,
                     "listingValidatedAt": "2026-09-01T11:00:00Z",
                     "repositoryUpdatedAt": "2026-09-01T10:00:00Z",
                     "stars": 42
@@ -269,7 +273,7 @@ printf 'git %s\n' "$*" >> "$OMARCHY_TEST_LOG"
 action=
 for argument in "$@"; do
   case "$argument" in
-    clone|checkout|rev-parse) action="$argument" ;;
+    clone|checkout|rev-parse|status|fetch|merge-base|merge|reset) action="$argument" ;;
   esac
   destination="$argument"
 done
@@ -277,8 +281,11 @@ case "$action" in
   clone)
     mkdir -p "$destination/.git"
     cp -R "$OMARCHY_MARKETPLACE_FIXTURE"/. "$destination"/
+    printf '%s\n' "{MARKETPLACE_REVISION}" > "$destination/.git/workbench-head"
     ;;
-  rev-parse) printf '%s\n' "{MARKETPLACE_REVISION}" ;;
+  checkout|merge|reset) printf '%s\n' "$destination" > .git/workbench-head ;;
+  rev-parse) cat .git/workbench-head ;;
+  status) : ;;
 esac
 "#
         ),
@@ -546,6 +553,15 @@ fn release_readiness_requires_current_clean_check_evidence() {
     )
     .unwrap();
     harness.initialise_git();
+    git(
+        &harness.project,
+        &[
+            "remote",
+            "add",
+            "origin",
+            "https://github.com/acme/workbench-demo.git",
+        ],
+    );
     let project = harness.project.to_string_lossy().into_owned();
     harness.json(&["add", &project, "--json"]);
 
@@ -565,6 +581,12 @@ fn release_readiness_requires_current_clean_check_evidence() {
     assert_eq!(ready["version"], "0.1.0");
     assert_eq!(ready["clean"], true);
     assert_eq!(ready["tagExists"], false);
+
+    let plan = harness.json(&["release-plan", "io.test.workbench-demo", "--json"]);
+    assert_eq!(plan["ok"], true);
+    assert_eq!(plan["tag"], "v0.1.0");
+    assert_eq!(plan["repository"], "https://github.com/acme/workbench-demo");
+    assert!(PathBuf::from(plan["planFile"].as_str().unwrap()).is_file());
 }
 
 #[test]
@@ -854,4 +876,183 @@ fn marketplace_rejects_a_symlinked_catalogue_cache() {
             .unwrap()
             .contains("not a normal file")
     );
+}
+
+#[test]
+fn marketplace_receipts_drive_verified_updates_and_exclude_generic_updates() {
+    let harness = Harness::new();
+    write_marketplace_catalog(&harness);
+    let (tools, log) = fake_omarchy_tools(&harness, true);
+    fake_marketplace_git(&harness, &tools);
+    let installed = harness.run_with_tools(
+        &[
+            "marketplace-install",
+            MARKETPLACE_ID,
+            "--repo",
+            MARKETPLACE_REPO,
+            "--revision",
+            MARKETPLACE_REVISION,
+            "--yes",
+            "--json",
+        ],
+        &tools,
+        &log,
+    );
+    assert!(installed.status.success());
+    let receipt = harness.home.join(format!(
+        ".local/state/omarchy/plugin-workbench/marketplace/receipts/{MARKETPLACE_ID}.json"
+    ));
+    assert!(receipt.is_file());
+
+    let next = "89abcdef0123456789abcdef0123456789abcdef";
+    write_marketplace_catalog_at(&harness, next);
+    let managed = harness.run_with_tools(&["marketplace-managed", "--json"], &tools, &log);
+    assert!(managed.status.success());
+    let managed: Value = serde_json::from_slice(&managed.stdout).unwrap();
+    assert_eq!(managed["updatesAvailable"], 1);
+    assert_eq!(managed["plugins"][0]["catalogueRevision"], next);
+
+    let generic = harness.run_with_tools(&["updates", "--json"], &tools, &log);
+    assert!(generic.status.success());
+    let generic: Value = serde_json::from_slice(&generic.stdout).unwrap();
+    assert_eq!(generic["plugins"], Value::Array(Vec::new()));
+
+    let updated = harness.run_with_tools(
+        &[
+            "marketplace-update",
+            MARKETPLACE_ID,
+            "--revision",
+            next,
+            "--yes",
+            "--json",
+        ],
+        &tools,
+        &log,
+    );
+    assert!(
+        updated.status.success(),
+        "{}",
+        String::from_utf8_lossy(&updated.stdout)
+    );
+    let updated: Value = serde_json::from_slice(&updated.stdout).unwrap();
+    assert_eq!(updated["revision"], next);
+    let receipt: Value = serde_json::from_slice(&fs::read(receipt).unwrap()).unwrap();
+    assert_eq!(receipt["installedRevision"], next);
+}
+
+#[test]
+fn marketplace_repair_and_uninstall_retain_recovery_copies() {
+    let harness = Harness::new();
+    write_marketplace_catalog(&harness);
+    let (tools, log) = fake_omarchy_tools(&harness, true);
+    fake_marketplace_git(&harness, &tools);
+    let installed = harness.run_with_tools(
+        &[
+            "marketplace-install",
+            MARKETPLACE_ID,
+            "--repo",
+            MARKETPLACE_REPO,
+            "--revision",
+            MARKETPLACE_REVISION,
+            "--yes",
+            "--json",
+        ],
+        &tools,
+        &log,
+    );
+    assert!(installed.status.success());
+    let target = harness
+        .home
+        .join(format!(".config/omarchy/plugins/{MARKETPLACE_ID}"));
+    fs::write(target.join("damaged.txt"), "recover me").unwrap();
+
+    let repaired = harness.run_with_tools(
+        &["marketplace-repair", MARKETPLACE_ID, "--yes", "--json"],
+        &tools,
+        &log,
+    );
+    assert!(repaired.status.success());
+    let repaired: Value = serde_json::from_slice(&repaired.stdout).unwrap();
+    let repair_backup = PathBuf::from(repaired["retainedBackup"].as_str().unwrap());
+    assert_eq!(fs::read_to_string(repair_backup.join("damaged.txt")).unwrap(), "recover me");
+
+    let removed = harness.run_with_tools(
+        &["marketplace-uninstall", MARKETPLACE_ID, "--yes", "--json"],
+        &tools,
+        &log,
+    );
+    assert!(removed.status.success());
+    let removed: Value = serde_json::from_slice(&removed.stdout).unwrap();
+    assert!(!target.exists());
+    assert!(PathBuf::from(removed["retainedBackup"].as_str().unwrap()).is_dir());
+    assert!(!harness.home.join(format!(
+        ".local/state/omarchy/plugin-workbench/marketplace/receipts/{MARKETPLACE_ID}.json"
+    )).exists());
+}
+
+#[test]
+fn marketplace_lifecycle_refuses_symlink_target_drift() {
+    let harness = Harness::new();
+    write_marketplace_catalog(&harness);
+    let (tools, log) = fake_omarchy_tools(&harness, true);
+    fake_marketplace_git(&harness, &tools);
+    let installed = harness.run_with_tools(
+        &[
+            "marketplace-install",
+            MARKETPLACE_ID,
+            "--repo",
+            MARKETPLACE_REPO,
+            "--revision",
+            MARKETPLACE_REVISION,
+            "--yes",
+            "--json",
+        ],
+        &tools,
+        &log,
+    );
+    assert!(installed.status.success());
+    let target = harness
+        .home
+        .join(format!(".config/omarchy/plugins/{MARKETPLACE_ID}"));
+    let external = harness.root.path().join("external-managed-plugin");
+    fs::rename(&target, &external).unwrap();
+    symlink(&external, &target).unwrap();
+
+    for action in ["marketplace-repair", "marketplace-uninstall"] {
+        let output = harness.run_with_tools(&[action, MARKETPLACE_ID, "--yes", "--json"], &tools, &log);
+        assert!(!output.status.success());
+        let error: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert!(error["error"].as_str().unwrap().contains("not a normal directory"));
+        assert!(target.is_symlink());
+        assert!(external.join("Panel.qml").is_file());
+    }
+}
+
+#[test]
+fn submission_prepare_emits_the_current_official_form_without_publishing() {
+    let harness = Harness::new();
+    write_marketplace_catalog(&harness);
+    fs::write(harness.project.join("README.md"), "Install and remove instructions").unwrap();
+    fs::write(harness.project.join("LICENSE"), "MIT").unwrap();
+    let project = harness.project.to_string_lossy().into_owned();
+    harness.json(&["add", &project, "--json"]);
+
+    let draft = harness.json(&[
+        "submission-prepare",
+        "io.test.workbench-demo",
+        "--repo",
+        "https://github.com/acme/workbench-demo",
+        "--category",
+        "Developer Tools",
+        "--tag",
+        "quickshell",
+        "--tag",
+        "bar",
+        "--confirm-checklist",
+        "--json",
+    ]);
+    assert_eq!(draft["ok"], true);
+    assert_eq!(draft["title"], "[Plugin]: Workbench Demo");
+    assert!(draft["body"].as_str().unwrap().contains("### Submission checklist"));
+    assert!(PathBuf::from(draft["draftFile"].as_str().unwrap()).is_file());
 }

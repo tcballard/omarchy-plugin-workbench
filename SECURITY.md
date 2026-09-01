@@ -28,6 +28,9 @@ Plugin Workbench treats plugin source, project configuration, shell logs, and in
 - A reviewed update fast-forwards only to the pinned object. Omarchy validation runs before the requested shell rescan; failure resets the checkout to its exact preceding revision, and rescan occurs only after validation succeeds.
 - Marketplace refresh downloads one fixed HTTPS catalogue URL with redirect protocol, size, timeout, schema, production-mode, field, count, and duplicate-id bounds. The owner-only cache must remain a normal file.
 - Marketplace installs accept only community root plugins with a GitHub HTTPS repository and full reviewed commit matching the current cache. Git hooks and filesystem monitors are disabled, the detached object is verified, the manifest id must match, and both internal and Omarchy validation precede publication.
+- Marketplace ownership receipts are owner-only bounded files. Managed updates require the cached next reviewed commit, a clean receipt-matching checkout and fast-forward ancestry; validation failure resets the exact previous commit.
+- Repair and uninstall require confirmation, refuse symlink targets and move normal owned directories into private recovery storage instead of deleting them.
+- Release plans and submission drafts are inert owner-only artifacts. Workbench never executes their commands, creates tags, pushes commits, publishes releases or opens public issues.
 - The bundled x86-64 helper is an intentional reviewed binary. CI builds and tests the locked source, then independently verifies the committed executable's recorded SHA-256 and version. Native linker output is not claimed to be reproducible across build environments.
 
 ## Important limitation

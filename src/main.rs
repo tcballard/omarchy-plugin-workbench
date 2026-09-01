@@ -5,6 +5,7 @@ mod marketplace;
 mod model;
 mod paths;
 mod process;
+mod publishing;
 mod registry;
 mod test_session;
 mod updates;
@@ -126,6 +127,8 @@ enum Command {
     },
     /// Inspect the host tools and pinned Omarchy contract.
     Doctor,
+    /// Show registered development projects and Workbench-managed installations.
+    Portfolio,
     /// Fetch and review updates for installed Git-managed plugins.
     Updates { id: Option<String> },
     /// Apply one reviewed update through Omarchy's validator and rollback path.
@@ -180,6 +183,46 @@ enum Command {
         enable: bool,
         #[arg(long, help = "Confirm installation of the reviewed snapshot")]
         yes: bool,
+    },
+    /// List marketplace installations owned by Workbench and reviewed updates.
+    MarketplaceManaged,
+    /// Update one Workbench-managed plugin to an exact marketplace-reviewed commit.
+    MarketplaceUpdate {
+        id: String,
+        #[arg(long)]
+        revision: String,
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Replace a Workbench-managed installation with the latest reviewed snapshot.
+    MarketplaceRepair {
+        id: String,
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Remove a Workbench-managed installation while retaining a recovery copy.
+    MarketplaceUninstall {
+        id: String,
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Produce an exact, reviewable release plan without tagging or publishing.
+    ReleasePlan { id: String },
+    /// Generate the current official marketplace submission body.
+    SubmissionPrepare {
+        id: String,
+        #[arg(long)]
+        repo: String,
+        #[arg(long)]
+        category: String,
+        #[arg(long = "tag")]
+        tags: Vec<String>,
+        #[arg(long)]
+        suggested_tag: Option<String>,
+        #[arg(long)]
+        notes: Option<String>,
+        #[arg(long, help = "Confirm all five official submission checklist statements")]
+        confirm_checklist: bool,
     },
 }
 
@@ -542,6 +585,20 @@ fn run(cli: &Cli) -> Result<()> {
             };
             emit(cli.json, &report, message)
         }
+        Command::Portfolio => {
+            let registry_config = registry::load(&paths)?;
+            let projects = workbench::project_statuses(&paths, &registry_config.projects)?;
+            let marketplace = marketplace::managed(&paths)?;
+            let report = json!({
+                "ok": marketplace.ok,
+                "registeredProjects": projects.len(),
+                "managedInstallations": marketplace.managed,
+                "marketplaceUpdatesAvailable": marketplace.updates_available,
+                "projects": projects,
+                "marketplace": marketplace.plugins
+            });
+            emit(cli.json, &report, "Workbench portfolio loaded")
+        }
         Command::Updates { id } => {
             let report = updates::inspect(&paths, id.as_deref())?;
             let message = format!(
@@ -606,6 +663,80 @@ fn run(cli: &Cli) -> Result<()> {
             let report = marketplace::install(&paths, id, repo, revision, *enable, *yes)?;
             emit(cli.json, &report, &report.message)
         }
+        Command::MarketplaceManaged => {
+            let report = marketplace::managed(&paths)?;
+            emit(
+                cli.json,
+                &report,
+                &format!(
+                    "{} Workbench-managed plugin(s); {} reviewed update(s)",
+                    report.managed, report.updates_available
+                ),
+            )
+        }
+        Command::MarketplaceUpdate { id, revision, yes } => {
+            let report = marketplace::update_managed(&paths, id, revision, *yes)?;
+            emit(cli.json, &report, &report.message)
+        }
+        Command::MarketplaceRepair { id, yes } => {
+            let report = marketplace::repair(&paths, id, *yes)?;
+            emit(cli.json, &report, &report.message)
+        }
+        Command::MarketplaceUninstall { id, yes } => {
+            let report = marketplace::uninstall(&paths, id, *yes)?;
+            emit(cli.json, &report, &report.message)
+        }
+        Command::ReleasePlan { id } => with_project(&paths, id, |project| {
+            let report = publishing::release_plan(&paths, project)?;
+            emit(
+                cli.json,
+                &report,
+                if report.ok {
+                    "Release plan is ready for review"
+                } else {
+                    "Release plan has blockers"
+                },
+            )?;
+            if report.ok {
+                Ok(())
+            } else {
+                Err(ReportedFailure.into())
+            }
+        }),
+        Command::SubmissionPrepare {
+            id,
+            repo,
+            category,
+            tags,
+            suggested_tag,
+            notes,
+            confirm_checklist,
+        } => with_project(&paths, id, |project| {
+            let report = publishing::submission_draft(
+                &paths,
+                project,
+                repo,
+                category,
+                tags,
+                suggested_tag.as_deref(),
+                notes.as_deref(),
+                *confirm_checklist,
+            )?;
+            emit(
+                cli.json,
+                &report,
+                if report.ok {
+                    "Marketplace submission draft is ready for owner review"
+                } else {
+                    "Marketplace submission draft has blockers"
+                },
+            )?;
+            if report.ok {
+                Ok(())
+            } else {
+                Err(ReportedFailure.into())
+            }
+        }),
     }
 }
 

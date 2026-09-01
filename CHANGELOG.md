@@ -1,7 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 — 2026-09-01
 
+- Add a unified portfolio contract for registered projects and Workbench-managed installations.
+- Add owner-only marketplace installation receipts, marketplace-reviewed update comparison and exact fast-forward application.
+- Add recoverable repair and uninstall actions that retain displaced checkouts in private Workbench trash.
+- Exclude marketplace-managed installations from mutable `origin/HEAD` update handling.
+- Add release-plan artifacts and current official marketplace submission generation with collision and checklist gates.
 - Add explicit refresh and local full-text/filter search across the official marketplace catalogue.
 - Add reviewed community-plugin installation pinned to the catalogue's exact validated commit, with hooks disabled, manifest-id checks, Omarchy validation, rescan, and optional enable.
 - Add native Marketplace/Projects views with built-in, verified, and installable filters.
