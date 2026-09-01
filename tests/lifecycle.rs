@@ -720,9 +720,14 @@ fn marketplace_searches_the_cached_official_catalogue_and_marks_installed_plugin
     .unwrap();
     let installed = harness.json(&["marketplace-search", "--installed", "--json"]);
     assert_eq!(installed["matched"], 2);
-    assert_eq!(installed["plugins"][0]["id"], MARKETPLACE_ID);
-    assert_eq!(installed["plugins"][0]["installed"], true);
-    assert_eq!(installed["plugins"][0]["installable"], false);
+    let installed_plugin = installed["plugins"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|plugin| plugin["id"] == MARKETPLACE_ID)
+        .unwrap();
+    assert_eq!(installed_plugin["installed"], true);
+    assert_eq!(installed_plugin["installable"], false);
 
     let built_in = harness.json(&["marketplace-search", "--built-in", "--json"]);
     assert_eq!(built_in["matched"], 1);
