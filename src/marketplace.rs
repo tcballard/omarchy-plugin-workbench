@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::fs::{self, OpenOptions};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 const CATALOG_URL: &str = "https://omarchyplugins.com/catalog.json";
 const CATALOG_SCHEMA: u32 = 2;
@@ -718,19 +718,21 @@ fn run_tool(
 }
 
 fn remove_owned_stage(plugins_dir: &Path, stage: &Path) {
-    if stage.parent() == Some(plugins_dir)
+    let owned = stage.parent() == Some(plugins_dir)
         && stage
             .file_name()
             .and_then(|name| name.to_str())
-            .is_some_and(|name| name.starts_with(".workbench-marketplace."))
-    {
-        if let Ok(metadata) = fs::symlink_metadata(stage) {
-            if metadata.file_type().is_symlink() || metadata.is_file() {
-                let _ = fs::remove_file(stage);
-            } else if metadata.is_dir() {
-                let _ = fs::remove_dir_all(stage);
-            }
-        }
+            .is_some_and(|name| name.starts_with(".workbench-marketplace."));
+    if !owned {
+        return;
+    }
+    let Ok(metadata) = fs::symlink_metadata(stage) else {
+        return;
+    };
+    if metadata.file_type().is_symlink() || metadata.is_file() {
+        let _ = fs::remove_file(stage);
+    } else if metadata.is_dir() {
+        let _ = fs::remove_dir_all(stage);
     }
 }
 
