@@ -974,7 +974,10 @@ fn marketplace_repair_and_uninstall_retain_recovery_copies() {
     assert!(repaired.status.success());
     let repaired: Value = serde_json::from_slice(&repaired.stdout).unwrap();
     let repair_backup = PathBuf::from(repaired["retainedBackup"].as_str().unwrap());
-    assert_eq!(fs::read_to_string(repair_backup.join("damaged.txt")).unwrap(), "recover me");
+    assert_eq!(
+        fs::read_to_string(repair_backup.join("damaged.txt")).unwrap(),
+        "recover me"
+    );
 
     let removed = harness.run_with_tools(
         &["marketplace-uninstall", MARKETPLACE_ID, "--yes", "--json"],
@@ -985,9 +988,14 @@ fn marketplace_repair_and_uninstall_retain_recovery_copies() {
     let removed: Value = serde_json::from_slice(&removed.stdout).unwrap();
     assert!(!target.exists());
     assert!(PathBuf::from(removed["retainedBackup"].as_str().unwrap()).is_dir());
-    assert!(!harness.home.join(format!(
-        ".local/state/omarchy/plugin-workbench/marketplace/receipts/{MARKETPLACE_ID}.json"
-    )).exists());
+    assert!(
+        !harness
+            .home
+            .join(format!(
+                ".local/state/omarchy/plugin-workbench/marketplace/receipts/{MARKETPLACE_ID}.json"
+            ))
+            .exists()
+    );
 }
 
 #[test]
@@ -1019,10 +1027,16 @@ fn marketplace_lifecycle_refuses_symlink_target_drift() {
     symlink(&external, &target).unwrap();
 
     for action in ["marketplace-repair", "marketplace-uninstall"] {
-        let output = harness.run_with_tools(&[action, MARKETPLACE_ID, "--yes", "--json"], &tools, &log);
+        let output =
+            harness.run_with_tools(&[action, MARKETPLACE_ID, "--yes", "--json"], &tools, &log);
         assert!(!output.status.success());
         let error: Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert!(error["error"].as_str().unwrap().contains("not a normal directory"));
+        assert!(
+            error["error"]
+                .as_str()
+                .unwrap()
+                .contains("not a normal directory")
+        );
         assert!(target.is_symlink());
         assert!(external.join("Panel.qml").is_file());
     }
@@ -1032,7 +1046,11 @@ fn marketplace_lifecycle_refuses_symlink_target_drift() {
 fn submission_prepare_emits_the_current_official_form_without_publishing() {
     let harness = Harness::new();
     write_marketplace_catalog(&harness);
-    fs::write(harness.project.join("README.md"), "Install and remove instructions").unwrap();
+    fs::write(
+        harness.project.join("README.md"),
+        "Install and remove instructions",
+    )
+    .unwrap();
     fs::write(harness.project.join("LICENSE"), "MIT").unwrap();
     let project = harness.project.to_string_lossy().into_owned();
     harness.json(&["add", &project, "--json"]);
@@ -1053,6 +1071,11 @@ fn submission_prepare_emits_the_current_official_form_without_publishing() {
     ]);
     assert_eq!(draft["ok"], true);
     assert_eq!(draft["title"], "[Plugin]: Workbench Demo");
-    assert!(draft["body"].as_str().unwrap().contains("### Submission checklist"));
+    assert!(
+        draft["body"]
+            .as_str()
+            .unwrap()
+            .contains("### Submission checklist")
+    );
     assert!(PathBuf::from(draft["draftFile"].as_str().unwrap()).is_file());
 }

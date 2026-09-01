@@ -221,7 +221,10 @@ enum Command {
         suggested_tag: Option<String>,
         #[arg(long)]
         notes: Option<String>,
-        #[arg(long, help = "Confirm all five official submission checklist statements")]
+        #[arg(
+            long,
+            help = "Confirm all five official submission checklist statements"
+        )]
         confirm_checklist: bool,
     },
 }

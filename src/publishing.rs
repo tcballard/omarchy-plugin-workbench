@@ -1,8 +1,8 @@
 use crate::manifest;
+use crate::model::CheckSpec;
 use crate::model::Project;
 use crate::paths::{AppPaths, secure_dir};
 use crate::process::run_check;
-use crate::model::CheckSpec;
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
 use std::fs::{self, OpenOptions};
@@ -10,7 +10,8 @@ use std::io::Write;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
-const MARKETPLACE_FORM: &str = "https://github.com/omacom/omarchy-plugin-marketplace/issues/new?template=submit-plugin.yml";
+const MARKETPLACE_FORM: &str =
+    "https://github.com/omacom/omarchy-plugin-marketplace/issues/new?template=submit-plugin.yml";
 const MAX_DRAFT_BYTES: usize = 128 * 1024;
 const CATEGORIES: &[&str] = &[
     "Appearance",
@@ -71,7 +72,9 @@ pub struct SubmissionDraft {
 
 pub fn release_plan(paths: &AppPaths, project: &Project) -> Result<ReleasePlan> {
     let readiness = crate::workbench::release_readiness(paths, project)?;
-    let repository = git_origin(paths, project).ok().and_then(normalize_github_origin);
+    let repository = git_origin(paths, project)
+        .ok()
+        .and_then(normalize_github_origin);
     let tag = format!("v{}", readiness.version);
     let mut exact_commands = Vec::new();
     if let Some(revision) = &readiness.revision {
@@ -101,7 +104,9 @@ pub fn release_plan(paths: &AppPaths, project: &Project) -> Result<ReleasePlan> 
                 "create".to_owned(),
                 tag.clone(),
                 "--repo".to_owned(),
-                repository.trim_start_matches("https://github.com/").to_owned(),
+                repository
+                    .trim_start_matches("https://github.com/")
+                    .to_owned(),
                 "--verify-tag".to_owned(),
                 "--generate-notes".to_owned(),
             ]);
@@ -166,7 +171,9 @@ pub fn submission_draft(
     let manifest = manifest::validate_plugin(&project.plugin_root)?;
     let mut blockers = Vec::new();
     if project.plugin_root != project.project_root {
-        blockers.push("marketplace submissions require manifest.json in the repository root".to_owned());
+        blockers.push(
+            "marketplace submissions require manifest.json in the repository root".to_owned(),
+        );
     }
     if !has_named_file(&project.project_root, &["README.md", "README", "readme.md"]) {
         blockers.push("repository root has no README".to_owned());
@@ -263,9 +270,9 @@ fn validate_github_repository(repository: &str) -> Result<()> {
     if parts.len() != 2
         || parts.iter().any(|part| {
             part.is_empty()
-                || !part.bytes().all(|byte| {
-                    byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.')
-                })
+                || !part
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
         })
     {
         bail!("marketplace repository must be a GitHub repository root URL");

@@ -499,9 +499,15 @@ pub fn submission_collision(paths: &AppPaths, id: &str, repo: &str) -> Result<Op
     let catalog = read_catalog(paths)?;
     Ok(catalog.plugins.iter().find_map(|plugin| {
         if plugin.id == id {
-            Some(format!("plugin id '{id}' is already listed from {}", plugin.repo))
+            Some(format!(
+                "plugin id '{id}' is already listed from {}",
+                plugin.repo
+            ))
         } else if plugin.repo.trim_end_matches(".git") == repo.trim_end_matches(".git") {
-            Some(format!("repository is already listed as plugin '{}'", plugin.id))
+            Some(format!(
+                "repository is already listed as plugin '{}'",
+                plugin.id
+            ))
         } else {
             None
         }
@@ -562,9 +568,16 @@ pub fn update_managed(
             warnings: Vec::new(),
         });
     }
-    let fetch = run_git(paths, &directory, &["fetch", "--quiet", "origin", reviewed_revision])?;
+    let fetch = run_git(
+        paths,
+        &directory,
+        &["fetch", "--quiet", "origin", reviewed_revision],
+    )?;
     if !fetch.ok {
-        bail!("could not fetch reviewed revision: {}", check_output(&fetch));
+        bail!(
+            "could not fetch reviewed revision: {}",
+            check_output(&fetch)
+        );
     }
     let ancestry = run_git(
         paths,
@@ -574,9 +587,16 @@ pub fn update_managed(
     if !ancestry.ok {
         bail!("reviewed marketplace revision is not a fast-forward from the installed snapshot");
     }
-    let merge = run_git(paths, &directory, &["merge", "--ff-only", reviewed_revision])?;
+    let merge = run_git(
+        paths,
+        &directory,
+        &["merge", "--ff-only", reviewed_revision],
+    )?;
     if !merge.ok {
-        bail!("could not apply reviewed revision: {}", check_output(&merge));
+        bail!(
+            "could not apply reviewed revision: {}",
+            check_output(&merge)
+        );
     }
     if let Err(error) = validate_managed_checkout(paths, id, &directory, reviewed_revision) {
         let _ = run_git(paths, &directory, &["reset", "--hard", &current]);
@@ -702,14 +722,19 @@ pub fn uninstall(paths: &AppPaths, id: &str, confirmed: bool) -> Result<Lifecycl
         if let Ok(result) = disable
             && !result.ok
         {
-            warnings.push(format!("plugin was removed but disable failed: {}", check_output(&result)));
+            warnings.push(format!(
+                "plugin was removed but disable failed: {}",
+                check_output(&result)
+            ));
         }
     }
     remove_receipt(paths, id)?;
     if command_exists("omarchy-shell")
         && let Err(error) = rescan_shell(paths)
     {
-        warnings.push(format!("plugin was removed but shell rescan failed: {error:#}"));
+        warnings.push(format!(
+            "plugin was removed but shell rescan failed: {error:#}"
+        ));
     }
     Ok(LifecycleReport {
         ok: true,
@@ -789,7 +814,13 @@ fn inspect_managed(
     }
 }
 
-fn clone_reviewed(paths: &AppPaths, id: &str, repo: &str, revision: &str, target: &Path) -> Result<()> {
+fn clone_reviewed(
+    paths: &AppPaths,
+    id: &str,
+    repo: &str,
+    revision: &str,
+    target: &Path,
+) -> Result<()> {
     if target.exists() || target.is_symlink() {
         bail!("plugin target already exists");
     }
@@ -805,14 +836,26 @@ fn clone_reviewed(paths: &AppPaths, id: &str, repo: &str, revision: &str, target
         let clone = run_git(
             paths,
             &paths.plugins_dir,
-            &["clone", "--no-checkout", "--", repo, &stage.to_string_lossy()],
+            &[
+                "clone",
+                "--no-checkout",
+                "--",
+                repo,
+                &stage.to_string_lossy(),
+            ],
         )?;
         if !clone.ok {
-            bail!("could not clone reviewed repository: {}", check_output(&clone));
+            bail!(
+                "could not clone reviewed repository: {}",
+                check_output(&clone)
+            );
         }
         let checkout = run_git(paths, &stage, &["checkout", "--detach", revision])?;
         if !checkout.ok {
-            bail!("reviewed revision is unavailable: {}", check_output(&checkout));
+            bail!(
+                "reviewed revision is unavailable: {}",
+                check_output(&checkout)
+            );
         }
         validate_managed_checkout(paths, id, &stage, revision)?;
         if target.exists() || target.is_symlink() {
@@ -827,13 +870,21 @@ fn clone_reviewed(paths: &AppPaths, id: &str, repo: &str, revision: &str, target
     result
 }
 
-fn validate_managed_checkout(paths: &AppPaths, id: &str, directory: &Path, revision: &str) -> Result<()> {
+fn validate_managed_checkout(
+    paths: &AppPaths,
+    id: &str,
+    directory: &Path,
+    revision: &str,
+) -> Result<()> {
     if git_stdout(paths, directory, &["rev-parse", "HEAD"])? != revision {
         bail!("Git did not check out the reviewed revision");
     }
     let validated = manifest::validate_plugin(directory)?;
     if validated.id != id {
-        bail!("reviewed manifest id '{}' does not match '{id}'", validated.id);
+        bail!(
+            "reviewed manifest id '{}' does not match '{id}'",
+            validated.id
+        );
     }
     validate_with_omarchy(paths, directory)
 }
