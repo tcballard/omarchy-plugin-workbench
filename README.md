@@ -1,6 +1,6 @@
 # Plugin Workbench for Omarchy
 
-Plugin Workbench is a native Omarchy Quattro bar panel plus a bounded Rust helper for developing and managing local shell plugins.
+Plugin Workbench is a native Omarchy Quattro bar panel plus a bounded Rust helper for discovering, installing, developing, and managing shell plugins.
 
 Install it directly from GitHub:
 
@@ -27,7 +27,7 @@ It answers two different development needs explicitly:
 - **Snapshot** copies the plugin into an immutable, content-addressed deployment and atomically switches Omarchy to it. Previous managed deployments remain available for rollback.
 - **Test window** launches a disposable nested Hyprland compositor with an isolated Omarchy shell configuration and a live link to the project.
 
-The workbench does not scan your home directory, execute install hooks, invoke a shell for project checks, use `sudo`, publish plugins, or replace an installation it did not create. Update discovery is limited to normal Git checkouts directly beneath Omarchy's documented plugins directory.
+The workbench does not scan your home directory, execute install hooks, invoke a shell for project checks, use `sudo`, publish plugins, or replace an installation it did not create. Marketplace discovery uses the official published catalogue; update discovery is limited to normal Git checkouts directly beneath Omarchy's documented plugins directory.
 
 ## Status
 
@@ -55,6 +55,29 @@ For each explicitly registered project, Workbench shows:
 - Drift when the managed link changes outside Workbench.
 
 Available actions include Validate, Test, Test window, capability workflows, environment diagnostics, isolated sessions, handoffs, evidence, release readiness, Live link, Snapshot, Rollback, Enable, Disable, Undeploy, reviewed installed-plugin updates, Logs, and Doctor.
+
+## Search and install official marketplace listings
+
+Open **Marketplace** in the panel to refresh the official catalogue, search locally by name, description, author, category, kind, or tag, and filter built-in, verified, or installable listings. “Official marketplace” describes the catalogue source; community listings are not presented as Omarchy-authored plugins. Built-ins are browse-only because Omarchy manages them.
+
+Workbench caches [`https://omarchyplugins.com/catalog.json`](https://omarchyplugins.com/catalog.json) only when you explicitly refresh it. Search then works against that private local cache without a network request:
+
+```bash
+bin/omarchy-plugin-workbench marketplace-refresh
+bin/omarchy-plugin-workbench marketplace-search clipboard --verified --json
+bin/omarchy-plugin-workbench marketplace-search --category Development --installable
+```
+
+For an installable community root plugin, search returns its repository and full marketplace-reviewed commit. Installation requires those exact values plus confirmation; Workbench rejects a stale review, checks out the detached commit with Git hooks disabled, validates the manifest internally and through Omarchy, then publishes and optionally enables it:
+
+```bash
+bin/omarchy-plugin-workbench marketplace-install io.github.example.plugin \
+  --repo https://github.com/example/plugin \
+  --revision FULL_40_CHARACTER_REVIEWED_COMMIT \
+  --enable --yes
+```
+
+The catalogue is public network input protected by HTTPS, not a signed package index. A reviewed commit limits moving-target risk but does not make third-party code safe; enabling a plugin runs it with your user permissions.
 
 ## Review and apply installed plugin updates
 
@@ -230,6 +253,7 @@ bin/omarchy-plugin-workbench release-check io.github.example.plugin
 | `~/.local/state/omarchy/plugin-workbench/test-sessions/` | Disposable nested compositor homes, config, logs, and ownership records |
 | `~/.local/state/omarchy/plugin-workbench/handoffs/` | Structured continuation records |
 | `~/.local/state/omarchy/plugin-workbench/evidence/` | Append-only per-project evidence ledgers |
+| `~/.local/state/omarchy/plugin-workbench/marketplace/catalog.json` | Explicitly refreshed official catalogue cache |
 | `~/.config/omarchy/plugins/<plugin-id>` | Atomic symlink controlled by Workbench |
 
 Config, state, receipts, and captured check output use owner-only permissions. Snapshot directories are owner-only too.

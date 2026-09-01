@@ -30,6 +30,9 @@ qmllint -I "$OMARCHY_PATH/shell" BarWidget.qml Panel.qml
 - Confirm keyboard focus returns to the previous application after closing.
 - Confirm the panel fits at 100%, fractional, and high-DPI scale where available.
 - Register valid root and nested plugin projects from the panel.
+- Open Marketplace, refresh the production catalogue, and search by text plus each built-in, verified, and installable filter.
+- Install and enable one reviewed community listing; confirm its displayed commit equals installed `HEAD` and its panel state changes to installed.
+- Change the cached listing between review and install and confirm Workbench refuses it without creating a target.
 - Verify malformed, reserved-id, symlinked, and missing-entry-point projects fail visibly.
 - Run Validate and Test, including an untrusted-check refusal.
 - Link a development checkout and confirm saved QML changes reload.

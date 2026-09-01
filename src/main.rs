@@ -1,6 +1,7 @@
 mod coordination;
 mod deploy;
 mod manifest;
+mod marketplace;
 mod model;
 mod paths;
 mod process;
@@ -144,6 +145,40 @@ enum Command {
         )]
         reviewed: Vec<String>,
         #[arg(long, help = "Confirm all reviewed updates")]
+        yes: bool,
+    },
+    /// Refresh the cached official marketplace catalogue.
+    MarketplaceRefresh,
+    /// Search the cached official marketplace catalogue locally.
+    MarketplaceSearch {
+        query: Option<String>,
+        #[arg(long)]
+        category: Option<String>,
+        #[arg(long)]
+        tag: Option<String>,
+        #[arg(long)]
+        kind: Option<String>,
+        #[arg(long)]
+        built_in: bool,
+        #[arg(long)]
+        verified: bool,
+        #[arg(long)]
+        installable: bool,
+        #[arg(long)]
+        installed: bool,
+        #[arg(long, default_value_t = 50)]
+        limit: usize,
+    },
+    /// Install and optionally enable one exact reviewed marketplace snapshot.
+    MarketplaceInstall {
+        id: String,
+        #[arg(long, help = "Exact repository URL shown by marketplace-search")]
+        repo: String,
+        #[arg(long, help = "Exact reviewed revision shown by marketplace-search")]
+        revision: String,
+        #[arg(long)]
+        enable: bool,
+        #[arg(long, help = "Confirm installation of the reviewed snapshot")]
         yes: bool,
     },
 }
@@ -527,6 +562,49 @@ fn run(cli: &Cli) -> Result<()> {
             } else {
                 Err(ReportedFailure.into())
             }
+        }
+        Command::MarketplaceRefresh => {
+            let report = marketplace::refresh(&paths)?;
+            emit(cli.json, &report, &report.message)
+        }
+        Command::MarketplaceSearch {
+            query,
+            category,
+            tag,
+            kind,
+            built_in,
+            verified,
+            installable,
+            installed,
+            limit,
+        } => {
+            let filters = marketplace::SearchFilters {
+                query: query.as_deref(),
+                category: category.as_deref(),
+                tag: tag.as_deref(),
+                kind: kind.as_deref(),
+                built_in_only: *built_in,
+                verified_only: *verified,
+                installable_only: *installable,
+                installed_only: *installed,
+                limit: *limit,
+            };
+            let report = marketplace::search(&paths, &filters)?;
+            emit(
+                cli.json,
+                &report,
+                &format!("{} marketplace result(s)", report.returned),
+            )
+        }
+        Command::MarketplaceInstall {
+            id,
+            repo,
+            revision,
+            enable,
+            yes,
+        } => {
+            let report = marketplace::install(&paths, id, repo, revision, *enable, *yes)?;
+            emit(cli.json, &report, &report.message)
         }
     }
 }

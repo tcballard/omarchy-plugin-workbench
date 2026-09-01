@@ -18,6 +18,8 @@ pub struct AppPaths {
     pub test_sessions_dir: PathBuf,
     pub handoffs_dir: PathBuf,
     pub evidence_dir: PathBuf,
+    pub marketplace_dir: PathBuf,
+    pub marketplace_catalog_file: PathBuf,
     pub lock_file: PathBuf,
 }
 
@@ -39,6 +41,7 @@ impl AppPaths {
         let config_dir = config_base.join("omarchy/plugin-workbench");
         let state_dir = state_base.join("omarchy/plugin-workbench");
         let sessions_dir = state_dir.join("sessions");
+        let marketplace_dir = state_dir.join("marketplace");
         Self {
             home_dir: home.clone(),
             config_file: config_dir.join("projects.json"),
@@ -50,6 +53,8 @@ impl AppPaths {
             test_sessions_dir: state_dir.join("test-sessions"),
             handoffs_dir: state_dir.join("handoffs"),
             evidence_dir: state_dir.join("evidence"),
+            marketplace_catalog_file: marketplace_dir.join("catalog.json"),
+            marketplace_dir,
             sessions_dir,
             config_dir,
             state_dir,
@@ -66,6 +71,7 @@ impl AppPaths {
             &self.test_sessions_dir,
             &self.handoffs_dir,
             &self.evidence_dir,
+            &self.marketplace_dir,
         ] {
             secure_dir(dir)?;
         }

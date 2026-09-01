@@ -16,6 +16,15 @@ Panel {
   property var projects: []
   property var pluginUpdates: []
   property bool updatesChecked: false
+  property bool marketplaceOpen: false
+  property bool marketplaceLoaded: false
+  property var marketplaceResults: []
+  property int marketplaceMatched: 0
+  property int marketplaceTotal: 0
+  property string marketplaceGeneratedAt: ""
+  property bool marketplaceBuiltInsOnly: false
+  property bool marketplaceVerifiedOnly: false
+  property bool marketplaceInstallableOnly: false
   property string message: ""
   property bool messageError: false
   property string refreshOutput: ""
@@ -137,11 +146,83 @@ Panel {
     }).join("\n") + (commits.length > 5 ? "\n…" : "")
   }
 
+  function toggleMarketplace() {
+    root.marketplaceOpen = !root.marketplaceOpen
+    if (root.marketplaceOpen) {
+      if (root.marketplaceLoaded) searchMarketplace()
+      else refreshMarketplace()
+    }
+  }
+
+  function refreshMarketplace() {
+    if (root.busy || !root.helperPath) return
+    root.actionOutput = ""
+    root.actionError = ""
+    root.message = "Refreshing the official marketplace catalogue…"
+    root.messageError = false
+    root.pendingAction = "marketplace-refresh"
+    actionProcess.command = [root.helperPath, "marketplace-refresh", "--json"]
+    actionProcess.running = true
+  }
+
+  function searchMarketplace() {
+    if (root.busy || !root.helperPath) return
+    root.actionOutput = ""
+    root.actionError = ""
+    root.message = "Searching the cached marketplace…"
+    root.messageError = false
+    root.pendingAction = "marketplace-search"
+    var command = [root.helperPath, "marketplace-search"]
+    var query = String(marketplaceSearchInput.text || "").trim()
+    if (query) command.push(query)
+    if (root.marketplaceBuiltInsOnly) command.push("--built-in")
+    if (root.marketplaceVerifiedOnly) command.push("--verified")
+    if (root.marketplaceInstallableOnly) command.push("--installable")
+    command.push("--limit")
+    command.push("50")
+    command.push("--json")
+    actionProcess.command = command
+    actionProcess.running = true
+  }
+
+  function installMarketplace(plugin) {
+    if (root.busy || !root.helperPath || !plugin.installable) return
+    root.actionOutput = ""
+    root.actionError = ""
+    root.message = "Installing reviewed snapshot of " + plugin.name + "…"
+    root.messageError = false
+    root.pendingAction = "marketplace-install"
+    actionProcess.command = [root.helperPath, "marketplace-install", plugin.id,
+      "--repo", plugin.repo, "--revision", plugin.reviewedRevision,
+      "--enable", "--yes", "--json"]
+    actionProcess.running = true
+  }
+
   function completeAction(exitCode) {
     var text = String(root.actionOutput || "").trim()
     var errorText = String(root.actionError || "").trim()
     var parsed = null
     try { parsed = JSON.parse(text || errorText || "{}") } catch (error) {}
+    if (root.pendingAction === "marketplace-refresh" && exitCode === 0 && parsed && parsed.ok) {
+      root.marketplaceLoaded = true
+      root.marketplaceGeneratedAt = parsed.generatedAt || ""
+      root.message = parsed.message || "Marketplace catalogue refreshed"
+      root.messageError = false
+      root.pendingAction = ""
+      Qt.callLater(root.searchMarketplace)
+      return
+    }
+    if (root.pendingAction === "marketplace-search" && exitCode === 0 && parsed && Array.isArray(parsed.plugins)) {
+      root.marketplaceLoaded = true
+      root.marketplaceResults = parsed.plugins
+      root.marketplaceMatched = Number(parsed.matched || 0)
+      root.marketplaceTotal = Number(parsed.total || 0)
+      root.marketplaceGeneratedAt = parsed.generatedAt || root.marketplaceGeneratedAt
+      root.message = root.marketplaceMatched + " marketplace result(s)"
+      root.messageError = false
+      root.pendingAction = ""
+      return
+    }
     if (root.pendingAction === "updates" && exitCode === 0 && parsed && Array.isArray(parsed.plugins)) {
       root.pluginUpdates = parsed.plugins
       root.updatesChecked = true
@@ -158,6 +239,7 @@ Panel {
     if (exitCode === 0) {
       pathInput.text = ""
       if (root.pendingAction === "update") Qt.callLater(root.checkUpdates)
+      else if (root.pendingAction === "marketplace-install") Qt.callLater(root.searchMarketplace)
       else Qt.callLater(root.refresh)
     }
     root.pendingAction = ""
@@ -233,7 +315,7 @@ Panel {
             spacing: Style.space(8)
 
             Column {
-              width: parent.width - refreshButton.width - updatesButton.width - Style.space(16)
+              width: parent.width - marketplaceButton.width - refreshButton.width - updatesButton.width - Style.space(24)
               spacing: Style.space(2)
 
               Text {
@@ -244,7 +326,9 @@ Panel {
                 font.bold: true
               }
               Text {
-                text: root.projectCount + (root.projectCount === 1 ? " registered project" : " registered projects")
+                text: root.marketplaceOpen
+                  ? root.marketplaceMatched + " of " + root.marketplaceTotal + " marketplace listings"
+                  : root.projectCount + (root.projectCount === 1 ? " registered project" : " registered projects")
                 color: Qt.rgba(root.barForeground.r, root.barForeground.g, root.barForeground.b, 0.62)
                 font.family: root.bar ? root.bar.fontFamily : Style.font.family
                 font.pixelSize: Style.font.caption
@@ -252,7 +336,15 @@ Panel {
             }
 
             WorkbenchButton {
+              id: marketplaceButton
+              label: root.marketplaceOpen ? "Projects" : "Marketplace"
+              enabled: !root.busy
+              onTriggered: root.toggleMarketplace()
+            }
+
+            WorkbenchButton {
               id: updatesButton
+              visible: !root.marketplaceOpen
               label: root.availableUpdateCount > 0 ? root.availableUpdateCount + " updates" : "Check updates"
               enabled: !root.busy
               onTriggered: root.checkUpdates()
@@ -267,8 +359,9 @@ Panel {
           }
 
           Rectangle {
+            visible: !root.marketplaceOpen
             width: parent.width
-            height: Style.space(38)
+            height: visible ? Style.space(38) : 0
             color: "transparent"
             border.color: Qt.rgba(root.barForeground.r, root.barForeground.g, root.barForeground.b, 0.28)
             border.width: 1
@@ -311,6 +404,92 @@ Panel {
           }
 
           Rectangle {
+            visible: root.marketplaceOpen
+            width: parent.width
+            height: visible ? Style.space(38) : 0
+            color: "transparent"
+            border.color: Qt.rgba(root.barForeground.r, root.barForeground.g, root.barForeground.b, 0.28)
+            border.width: 1
+            radius: Style.cornerRadius
+
+            Row {
+              anchors.fill: parent
+              anchors.margins: Style.space(7)
+              spacing: Style.space(8)
+
+              TextInput {
+                id: marketplaceSearchInput
+                width: parent.width - marketplaceSearchButton.width - marketplaceRefreshButton.width - Style.space(16)
+                height: parent.height
+                color: root.barForeground
+                selectionColor: Color.accent
+                font.family: root.bar ? root.bar.fontFamily : Style.font.family
+                font.pixelSize: Style.font.body
+                verticalAlignment: TextInput.AlignVCenter
+                clip: true
+                selectByMouse: true
+                onAccepted: root.searchMarketplace()
+
+                Text {
+                  anchors.verticalCenter: parent.verticalCenter
+                  visible: !marketplaceSearchInput.text
+                  text: "Search name, description, author, category or tag"
+                  color: Qt.rgba(root.barForeground.r, root.barForeground.g, root.barForeground.b, 0.42)
+                  font: marketplaceSearchInput.font
+                }
+              }
+
+              WorkbenchButton {
+                id: marketplaceSearchButton
+                label: "Search"
+                enabled: !root.busy && root.marketplaceLoaded
+                onTriggered: root.searchMarketplace()
+              }
+
+              WorkbenchButton {
+                id: marketplaceRefreshButton
+                label: "Refresh"
+                enabled: !root.busy
+                onTriggered: root.refreshMarketplace()
+              }
+            }
+          }
+
+          Row {
+            visible: root.marketplaceOpen
+            height: visible ? implicitHeight : 0
+            spacing: Style.space(6)
+            WorkbenchButton {
+              label: root.marketplaceBuiltInsOnly ? "Built-ins ✓" : "Built-ins"
+              onTriggered: {
+                root.marketplaceBuiltInsOnly = !root.marketplaceBuiltInsOnly
+                root.searchMarketplace()
+              }
+            }
+            WorkbenchButton {
+              label: root.marketplaceVerifiedOnly ? "Verified ✓" : "Verified"
+              onTriggered: {
+                root.marketplaceVerifiedOnly = !root.marketplaceVerifiedOnly
+                root.searchMarketplace()
+              }
+            }
+            WorkbenchButton {
+              label: root.marketplaceInstallableOnly ? "Installable ✓" : "Installable"
+              onTriggered: {
+                root.marketplaceInstallableOnly = !root.marketplaceInstallableOnly
+                root.searchMarketplace()
+              }
+            }
+            Text {
+              anchors.verticalCenter: parent.verticalCenter
+              text: root.marketplaceGeneratedAt ? "Catalogue " + root.marketplaceGeneratedAt.slice(0, 10) : ""
+              color: Qt.rgba(root.barForeground.r, root.barForeground.g, root.barForeground.b, 0.48)
+              font.family: root.bar ? root.bar.fontFamily : Style.font.family
+              font.pixelSize: Style.font.caption
+            }
+          }
+
+          Rectangle {
             width: parent.width
             height: root.message ? Style.space(34) : 0
             visible: height > 0
@@ -344,8 +523,34 @@ Panel {
               width: parent.width
               spacing: Style.space(8)
 
+              Column {
+                visible: root.marketplaceOpen
+                width: parent.width
+                spacing: Style.space(8)
+
+                Repeater {
+                  model: root.marketplaceResults
+                  delegate: MarketplaceCard {
+                    required property var modelData
+                    width: projectList.width
+                    plugin: modelData
+                  }
+                }
+
+                Text {
+                  visible: root.marketplaceLoaded && root.marketplaceResults.length === 0
+                  width: parent.width
+                  topPadding: Style.space(40)
+                  text: "No marketplace plugins match this search."
+                  color: Qt.rgba(root.barForeground.r, root.barForeground.g, root.barForeground.b, 0.58)
+                  font.family: root.bar ? root.bar.fontFamily : Style.font.family
+                  font.pixelSize: Style.font.body
+                  horizontalAlignment: Text.AlignHCenter
+                }
+              }
+
               Rectangle {
-                visible: root.updatesChecked
+                visible: !root.marketplaceOpen && root.updatesChecked
                 width: parent.width
                 height: visible ? updateContent.implicitHeight + Style.space(20) : 0
                 color: Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.08)
@@ -408,7 +613,7 @@ Panel {
               }
 
               Repeater {
-                model: root.projects
+                model: root.marketplaceOpen ? [] : root.projects
 
                 delegate: ProjectCard {
                   required property var modelData
@@ -418,7 +623,7 @@ Panel {
               }
 
               Column {
-                visible: root.projects.length === 0
+                visible: !root.marketplaceOpen && root.projects.length === 0
                 width: parent.width
                 topPadding: Style.space(48)
                 spacing: Style.space(9)
@@ -698,6 +903,106 @@ Panel {
         wrapMode: Text.Wrap
         maximumLineCount: 4
         elide: Text.ElideRight
+      }
+    }
+  }
+
+  component MarketplaceCard: Rectangle {
+    id: marketplaceCard
+    required property var plugin
+    implicitHeight: marketplaceCardContent.implicitHeight + Style.space(18)
+    color: Qt.rgba(root.barForeground.r, root.barForeground.g, root.barForeground.b, 0.055)
+    radius: Style.cornerRadius
+    border.color: plugin.installed
+      ? Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.42)
+      : Qt.rgba(root.barForeground.r, root.barForeground.g, root.barForeground.b, 0.12)
+    border.width: 1
+
+    Column {
+      id: marketplaceCardContent
+      anchors.left: parent.left
+      anchors.right: parent.right
+      anchors.top: parent.top
+      anchors.margins: Style.space(9)
+      spacing: Style.space(5)
+
+      Row {
+        width: parent.width
+        spacing: Style.space(8)
+        Column {
+          width: parent.width - marketplaceInstallButton.width - Style.space(8)
+          spacing: Style.space(2)
+          Text {
+            width: parent.width
+            text: marketplaceCard.plugin.name + "  ·  " + marketplaceCard.plugin.version
+            color: root.barForeground
+            font.family: root.bar ? root.bar.fontFamily : Style.font.family
+            font.pixelSize: Style.font.body
+            font.bold: true
+            elide: Text.ElideRight
+          }
+          Text {
+            width: parent.width
+            text: marketplaceCard.plugin.kind + "  ·  " + marketplaceCard.plugin.category
+              + "  ·  " + marketplaceCard.plugin.author
+            color: Qt.rgba(root.barForeground.r, root.barForeground.g, root.barForeground.b, 0.58)
+            font.family: root.bar ? root.bar.fontFamily : Style.font.family
+            font.pixelSize: Style.font.caption
+            elide: Text.ElideRight
+          }
+        }
+        WorkbenchButton {
+          id: marketplaceInstallButton
+          visible: marketplaceCard.plugin.installable
+          label: "Install & enable"
+          enabled: !root.busy
+          onTriggered: root.installMarketplace(marketplaceCard.plugin)
+        }
+      }
+
+      Text {
+        width: parent.width
+        text: marketplaceCard.plugin.description
+        color: root.barForeground
+        font.family: root.bar ? root.bar.fontFamily : Style.font.family
+        font.pixelSize: Style.font.caption
+        wrapMode: Text.WordWrap
+        maximumLineCount: 3
+        elide: Text.ElideRight
+      }
+
+      Text {
+        width: parent.width
+        text: marketplaceCard.plugin.id
+          + (marketplaceCard.plugin.tags.length ? "  ·  " + marketplaceCard.plugin.tags.join(", ") : "")
+        color: Qt.rgba(root.barForeground.r, root.barForeground.g, root.barForeground.b, 0.52)
+        font.family: root.bar ? root.bar.fontFamily : Style.font.family
+        font.pixelSize: Style.font.caption
+        elide: Text.ElideRight
+      }
+
+      Text {
+        width: parent.width
+        text: marketplaceCard.plugin.builtIn ? "BUILT IN"
+          : marketplaceCard.plugin.installed ? "INSTALLED"
+          : String(marketplaceCard.plugin.verificationStatus || "unverified").toUpperCase()
+            + (marketplaceCard.plugin.reviewedRevision
+              ? "  ·  REVIEWED " + String(marketplaceCard.plugin.reviewedRevision).slice(0, 10)
+              : "")
+        color: marketplaceCard.plugin.installed || marketplaceCard.plugin.verificationStatus === "verified"
+          ? Color.accent : Color.urgent
+        font.family: root.bar ? root.bar.fontFamily : Style.font.family
+        font.pixelSize: Style.font.caption
+        font.bold: true
+      }
+
+      Text {
+        width: parent.width
+        text: marketplaceCard.plugin.repo
+        color: Qt.rgba(root.barForeground.r, root.barForeground.g, root.barForeground.b, 0.46)
+        font.family: root.bar ? root.bar.fontFamily : Style.font.family
+        font.pixelSize: Style.font.caption
+        elide: Text.ElideMiddle
       }
     }
   }

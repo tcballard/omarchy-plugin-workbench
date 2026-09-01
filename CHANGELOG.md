@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add explicit refresh and local full-text/filter search across the official marketplace catalogue.
+- Add reviewed community-plugin installation pinned to the catalogue's exact validated commit, with hooks disabled, manifest-id checks, Omarchy validation, rescan, and optional enable.
+- Add native Marketplace/Projects views with built-in, verified, and installable filters.
 - Add reviewed update discovery for every installed Git-managed plugin, with incoming commits, diff stats, and dirty/diverged-state blocking.
 - Pin updates to the reviewed commit, require explicit confirmation, validate through Omarchy, roll back failures, and rescan after success.
 - Add per-plugin and Update all controls to the native panel.
