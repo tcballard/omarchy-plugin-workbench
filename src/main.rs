@@ -6,6 +6,7 @@ mod paths;
 mod process;
 mod registry;
 mod test_session;
+mod updates;
 mod workbench;
 
 use crate::paths::AppPaths;
@@ -124,6 +125,27 @@ enum Command {
     },
     /// Inspect the host tools and pinned Omarchy contract.
     Doctor,
+    /// Fetch and review updates for installed Git-managed plugins.
+    Updates { id: Option<String> },
+    /// Apply one reviewed update through Omarchy's validator and rollback path.
+    Update {
+        id: String,
+        #[arg(long, help = "Exact remote revision shown by the updates command")]
+        revision: String,
+        #[arg(long, help = "Confirm the reviewed update")]
+        yes: bool,
+    },
+    /// Apply every safe reviewed update through Omarchy.
+    UpdateAll {
+        #[arg(
+            long = "reviewed",
+            value_name = "ID=REVISION",
+            help = "A plugin and exact revision shown by the updates command"
+        )]
+        reviewed: Vec<String>,
+        #[arg(long, help = "Confirm all reviewed updates")]
+        yes: bool,
+    },
 }
 
 fn main() {
@@ -484,6 +506,27 @@ fn run(cli: &Cli) -> Result<()> {
                 "Workbench host is missing required Omarchy tools"
             };
             emit(cli.json, &report, message)
+        }
+        Command::Updates { id } => {
+            let report = updates::inspect(&paths, id.as_deref())?;
+            let message = format!(
+                "{} update(s) available; {} plugin(s) need attention",
+                report.available, report.blocked
+            );
+            emit(cli.json, &report, &message)
+        }
+        Command::Update { id, revision, yes } => {
+            let report = updates::apply_one(&paths, id, revision, *yes)?;
+            emit(cli.json, &report, &report.message)
+        }
+        Command::UpdateAll { reviewed, yes } => {
+            let report = updates::apply_all(&paths, reviewed, *yes)?;
+            emit(cli.json, &report, &report.message)?;
+            if report.ok {
+                Ok(())
+            } else {
+                Err(ReportedFailure.into())
+            }
         }
     }
 }

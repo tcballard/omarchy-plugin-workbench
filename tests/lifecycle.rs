@@ -1,7 +1,7 @@
 use serde_json::Value;
 use std::fs;
-use std::os::unix::fs::{FileTypeExt, PermissionsExt};
-use std::path::PathBuf;
+use std::os::unix::fs::{FileTypeExt, PermissionsExt, symlink};
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use tempfile::TempDir;
 
@@ -58,6 +58,23 @@ impl Harness {
         serde_json::from_slice(&output.stdout).unwrap()
     }
 
+    fn run_with_tools(&self, args: &[&str], tools: &Path, log: &Path) -> Output {
+        let mut search_path = vec![tools.clone()];
+        search_path.extend(std::env::split_paths(
+            &std::env::var_os("PATH").unwrap_or_default(),
+        ));
+        let path = std::env::join_paths(search_path).unwrap();
+        Command::new(env!("CARGO_BIN_EXE_omarchy-plugin-workbench"))
+            .args(args)
+            .env("HOME", &self.home)
+            .env("XDG_CONFIG_HOME", self.home.join(".config"))
+            .env("XDG_STATE_HOME", self.home.join(".local/state"))
+            .env("PATH", path)
+            .env("OMARCHY_TEST_LOG", log)
+            .output()
+            .unwrap()
+    }
+
     fn installed_target(&self) -> PathBuf {
         self.home
             .join(".config/omarchy/plugins/io.test.workbench-demo")
@@ -82,6 +99,74 @@ impl Harness {
         run(&["add", "."]);
         run(&["commit", "-m", "initial"]);
     }
+}
+
+fn git(cwd: &std::path::Path, args: &[&str]) -> String {
+    let output = Command::new("git").args(args).current_dir(cwd).output().unwrap();
+    assert!(
+        output.status.success(),
+        "git {:?} failed: {}",
+        args,
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8_lossy(&output.stdout).trim().to_owned()
+}
+
+fn setup_installed_update(harness: &Harness) -> (PathBuf, String, String) {
+    harness.initialise_git();
+    let origin = harness.root.path().join("origin.git");
+    fs::create_dir_all(&origin).unwrap();
+    git(&origin, &["init", "--bare", "--initial-branch=main"]);
+    git(
+        &harness.project,
+        &["remote", "add", "origin", &origin.to_string_lossy()],
+    );
+    git(&harness.project, &["push", "-u", "origin", "main"]);
+    fs::create_dir_all(harness.installed_target().parent().unwrap()).unwrap();
+    git(
+        harness.installed_target().parent().unwrap(),
+        &[
+            "clone",
+            &origin.to_string_lossy(),
+            &harness.installed_target().to_string_lossy(),
+        ],
+    );
+    let current = git(&harness.installed_target(), &["rev-parse", "HEAD"]);
+
+    fs::write(
+        harness.project.join("Panel.qml"),
+        "import QtQuick\nItem { objectName: \"updated\" }\n",
+    )
+    .unwrap();
+    git(&harness.project, &["add", "Panel.qml"]);
+    git(&harness.project, &["commit", "-m", "show reviewed update"]);
+    git(&harness.project, &["push", "origin", "main"]);
+    let remote = git(&harness.project, &["rev-parse", "HEAD"]);
+    (origin, current, remote)
+}
+
+fn fake_omarchy_tools(harness: &Harness, validation_succeeds: bool) -> (PathBuf, PathBuf) {
+    let tools = harness.root.path().join("fake-tools");
+    let log = harness.root.path().join("tool.log");
+    fs::create_dir_all(&tools).unwrap();
+    let omarchy = tools.join("omarchy");
+    fs::write(
+        &omarchy,
+        format!(
+            "#!/bin/sh\nprintf 'omarchy %s\\n' \"$*\" >> \"$OMARCHY_TEST_LOG\"\nexit {}\n",
+            if validation_succeeds { 0 } else { 1 }
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(&omarchy, fs::Permissions::from_mode(0o755)).unwrap();
+    let shell = tools.join("omarchy-shell");
+    fs::write(
+        &shell,
+        "#!/bin/sh\nprintf 'omarchy-shell %s\\n' \"$*\" >> \"$OMARCHY_TEST_LOG\"\n",
+    )
+    .unwrap();
+    fs::set_permissions(&shell, fs::Permissions::from_mode(0o755)).unwrap();
+    (tools, log)
 }
 
 #[test]
@@ -362,4 +447,125 @@ fn release_readiness_requires_current_clean_check_evidence() {
     assert_eq!(ready["version"], "0.1.0");
     assert_eq!(ready["clean"], true);
     assert_eq!(ready["tagExists"], false);
+}
+
+#[test]
+fn update_review_reports_the_pinned_revision_commits_and_diff_stat() {
+    let harness = Harness::new();
+    let (_origin, current, remote) = setup_installed_update(&harness);
+
+    let report = harness.json(&["updates", "--json"]);
+    assert_eq!(report["ok"], true);
+    assert_eq!(report["available"], 1);
+    assert_eq!(report["blocked"], 0);
+    let update = &report["plugins"][0];
+    assert_eq!(update["id"], "io.test.workbench-demo");
+    assert_eq!(update["state"], "update-available");
+    assert_eq!(update["updateable"], true);
+    assert_eq!(update["currentRevision"], current);
+    assert_eq!(update["remoteRevision"], remote);
+    assert_eq!(update["behind"], 1);
+    assert_eq!(update["commits"][0]["subject"], "show reviewed update");
+    assert!(
+        update["diffStat"]
+            .as_str()
+            .unwrap()
+            .contains("Panel.qml")
+    );
+}
+
+#[test]
+fn dirty_and_live_link_plugins_are_never_offered_for_update() {
+    let harness = Harness::new();
+    setup_installed_update(&harness);
+    fs::write(harness.installed_target().join("local.txt"), "keep me").unwrap();
+
+    let report = harness.json(&["updates", "--json"]);
+    assert_eq!(report["available"], 0);
+    assert_eq!(report["blocked"], 1);
+    assert_eq!(report["plugins"][0]["state"], "dirty");
+    assert_eq!(report["plugins"][0]["updateable"], false);
+
+    fs::remove_dir_all(harness.installed_target()).unwrap();
+    symlink(&harness.project, harness.installed_target()).unwrap();
+    let linked = harness.json(&["updates", "--json"]);
+    assert_eq!(linked["plugins"], Value::Array(Vec::new()));
+}
+
+#[test]
+fn update_applies_only_the_reviewed_revision_then_validates_and_rescans() {
+    let harness = Harness::new();
+    let (_origin, _current, remote) = setup_installed_update(&harness);
+    let (tools, log) = fake_omarchy_tools(&harness, true);
+
+    let output = harness.run_with_tools(
+        &[
+            "update",
+            "io.test.workbench-demo",
+            "--revision",
+            &remote,
+            "--yes",
+            "--json",
+        ],
+        &tools,
+        &log,
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(result["updated"][0], "io.test.workbench-demo");
+    assert_eq!(git(&harness.installed_target(), &["rev-parse", "HEAD"]), remote);
+    let calls = fs::read_to_string(log).unwrap();
+    assert!(calls.contains("omarchy plugin validate"));
+    assert!(calls.contains("omarchy-shell shell rescanPlugins"));
+}
+
+#[test]
+fn update_refuses_stale_review_and_rolls_back_failed_validation() {
+    let harness = Harness::new();
+    let (_origin, current, remote) = setup_installed_update(&harness);
+    let (tools, log) = fake_omarchy_tools(&harness, false);
+
+    let stale = harness.run_with_tools(
+        &[
+            "update",
+            "io.test.workbench-demo",
+            "--revision",
+            &"0".repeat(40),
+            "--yes",
+            "--json",
+        ],
+        &tools,
+        &log,
+    );
+    assert!(!stale.status.success());
+    let stale_error: Value = serde_json::from_slice(&stale.stdout).unwrap();
+    assert!(
+        stale_error["error"]
+            .as_str()
+            .unwrap()
+            .contains("changed since review")
+    );
+    assert_eq!(git(&harness.installed_target(), &["rev-parse", "HEAD"]), current);
+
+    let failed = harness.run_with_tools(
+        &[
+            "update",
+            "io.test.workbench-demo",
+            "--revision",
+            &remote,
+            "--yes",
+            "--json",
+        ],
+        &tools,
+        &log,
+    );
+    assert!(!failed.status.success());
+    let failure: Value = serde_json::from_slice(&failed.stdout).unwrap();
+    assert!(failure["error"].as_str().unwrap().contains("rolled back"));
+    assert_eq!(git(&harness.installed_target(), &["rev-parse", "HEAD"]), current);
+    assert!(!fs::read_to_string(log).unwrap().contains("omarchy-shell"));
 }

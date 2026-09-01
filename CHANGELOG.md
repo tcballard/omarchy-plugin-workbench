@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add reviewed update discovery for every installed Git-managed plugin, with incoming commits, diff stats, and dirty/diverged-state blocking.
+- Pin updates to the reviewed commit, require explicit confirmation, validate through Omarchy, roll back failures, and rescan after success.
+- Add per-plugin and Update all controls to the native panel.
 - Add disposable nested Hyprland test windows with isolated Omarchy config/state, live plugin source, owned process lifecycle, and explicit non-sandbox boundaries.
 - Add isolated Git worktree sessions with optional local agent labels and non-destructive closure.
 - Add structured agent-neutral handoffs with revision and dirty-state evidence.

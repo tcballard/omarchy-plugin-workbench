@@ -14,13 +14,18 @@ Panel {
   property var hostWidget: null
   property string helperPath: ""
   property var projects: []
+  property var pluginUpdates: []
+  property bool updatesChecked: false
   property string message: ""
   property bool messageError: false
   property string refreshOutput: ""
   property string actionOutput: ""
   property string actionError: ""
   property bool showBuilderSetup: false
+  property string pendingAction: ""
   readonly property int projectCount: projects.length
+  readonly property int availableUpdateCount: pluginUpdates.filter(function(plugin) { return plugin.updateable }).length
+  readonly property var reviewUpdates: pluginUpdates.filter(function(plugin) { return plugin.state !== "up-to-date" })
   readonly property bool busy: refreshProcess.running || actionProcess.running
 
   function open() {
@@ -70,6 +75,7 @@ Panel {
     root.actionError = ""
     root.message = action + " · " + projectId
     root.messageError = false
+    root.pendingAction = "project"
     actionProcess.command = [root.helperPath, action, projectId, "--json"]
     actionProcess.running = true
   }
@@ -81,8 +87,54 @@ Panel {
     root.actionError = ""
     root.message = "Registering " + path
     root.messageError = false
+    root.pendingAction = "project"
     actionProcess.command = [root.helperPath, "add", path, "--json"]
     actionProcess.running = true
+  }
+
+  function checkUpdates() {
+    if (root.busy || !root.helperPath) return
+    root.actionOutput = ""
+    root.actionError = ""
+    root.message = "Fetching installed plugin updates…"
+    root.messageError = false
+    root.pendingAction = "updates"
+    actionProcess.command = [root.helperPath, "updates", "--json"]
+    actionProcess.running = true
+  }
+
+  function applyUpdate(pluginId, revision) {
+    if (root.busy || !root.helperPath) return
+    root.actionOutput = ""
+    root.actionError = ""
+    root.message = "Updating " + pluginId + " through Omarchy…"
+    root.messageError = false
+    root.pendingAction = "update"
+    actionProcess.command = [root.helperPath, "update", pluginId, "--revision", revision, "--yes", "--json"]
+    actionProcess.running = true
+  }
+
+  function applyAllUpdates() {
+    if (root.busy || !root.helperPath || root.availableUpdateCount === 0) return
+    root.actionOutput = ""
+    root.actionError = ""
+    root.message = "Applying " + root.availableUpdateCount + " reviewed update(s)…"
+    root.messageError = false
+    root.pendingAction = "update"
+    var command = [root.helperPath, "update-all", "--yes", "--json"]
+    root.pluginUpdates.filter(function(plugin) { return plugin.updateable }).forEach(function(plugin) {
+      command.push("--reviewed")
+      command.push(plugin.id + "=" + plugin.remoteRevision)
+    })
+    actionProcess.command = command
+    actionProcess.running = true
+  }
+
+  function incomingSummary(commits) {
+    if (!Array.isArray(commits) || commits.length === 0) return "No incoming commit summary"
+    return commits.slice(0, 5).map(function(commit) {
+      return commit.revision + "  " + commit.subject
+    }).join("\n") + (commits.length > 5 ? "\n…" : "")
   }
 
   function completeAction(exitCode) {
@@ -90,14 +142,25 @@ Panel {
     var errorText = String(root.actionError || "").trim()
     var parsed = null
     try { parsed = JSON.parse(text || errorText || "{}") } catch (error) {}
+    if (root.pendingAction === "updates" && exitCode === 0 && parsed && Array.isArray(parsed.plugins)) {
+      root.pluginUpdates = parsed.plugins
+      root.updatesChecked = true
+      root.message = Number(parsed.available || 0) + " update(s) available"
+        + (Number(parsed.blocked || 0) > 0 ? " · " + parsed.blocked + " need attention" : "")
+      root.messageError = false
+      root.pendingAction = ""
+      return
+    }
     root.messageError = exitCode !== 0 || (parsed && parsed.ok === false)
     root.message = parsed && parsed.error ? parsed.error
       : parsed && parsed.message ? parsed.message
       : errorText || text || (exitCode === 0 ? "Action completed" : "Action failed")
     if (exitCode === 0) {
       pathInput.text = ""
-      Qt.callLater(root.refresh)
+      if (root.pendingAction === "update") Qt.callLater(root.checkUpdates)
+      else Qt.callLater(root.refresh)
     }
+    root.pendingAction = ""
   }
 
   Process {
@@ -170,7 +233,7 @@ Panel {
             spacing: Style.space(8)
 
             Column {
-              width: parent.width - refreshButton.width - Style.space(8)
+              width: parent.width - refreshButton.width - updatesButton.width - Style.space(16)
               spacing: Style.space(2)
 
               Text {
@@ -186,6 +249,13 @@ Panel {
                 font.family: root.bar ? root.bar.fontFamily : Style.font.family
                 font.pixelSize: Style.font.caption
               }
+            }
+
+            WorkbenchButton {
+              id: updatesButton
+              label: root.availableUpdateCount > 0 ? root.availableUpdateCount + " updates" : "Check updates"
+              enabled: !root.busy
+              onTriggered: root.checkUpdates()
             }
 
             WorkbenchButton {
@@ -273,6 +343,69 @@ Panel {
               id: projectList
               width: parent.width
               spacing: Style.space(8)
+
+              Rectangle {
+                visible: root.updatesChecked
+                width: parent.width
+                height: visible ? updateContent.implicitHeight + Style.space(20) : 0
+                color: Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.08)
+                radius: Style.cornerRadius
+                border.color: Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.28)
+                border.width: 1
+
+                Column {
+                  id: updateContent
+                  anchors.left: parent.left
+                  anchors.right: parent.right
+                  anchors.top: parent.top
+                  anchors.margins: Style.space(10)
+                  spacing: Style.space(8)
+
+                  Row {
+                    width: parent.width
+                    spacing: Style.space(8)
+
+                    Column {
+                      width: parent.width - updateAllButton.width - Style.space(8)
+                      spacing: Style.space(2)
+                      Text {
+                        text: "INSTALLED PLUGIN UPDATES"
+                        color: root.barForeground
+                        font.family: root.bar ? root.bar.fontFamily : Style.font.family
+                        font.pixelSize: Style.font.body
+                        font.bold: true
+                      }
+                      Text {
+                        text: root.availableUpdateCount > 0
+                          ? root.availableUpdateCount + " fast-forward update(s) ready after review"
+                          : root.reviewUpdates.length > 0
+                            ? root.reviewUpdates.length + " plugin(s) need attention"
+                            : "All Git-managed plugins are up to date"
+                        color: Qt.rgba(root.barForeground.r, root.barForeground.g, root.barForeground.b, 0.58)
+                        font.family: root.bar ? root.bar.fontFamily : Style.font.family
+                        font.pixelSize: Style.font.caption
+                      }
+                    }
+
+                    WorkbenchButton {
+                      id: updateAllButton
+                      visible: root.availableUpdateCount > 0
+                      label: "Update all"
+                      enabled: !root.busy
+                      onTriggered: root.applyAllUpdates()
+                    }
+                  }
+
+                  Repeater {
+                    model: root.reviewUpdates
+                    delegate: UpdateCard {
+                      required property var modelData
+                      width: updateContent.width
+                      update: modelData
+                    }
+                  }
+                }
+              }
 
               Repeater {
                 model: root.projects
@@ -465,6 +598,106 @@ Panel {
           label: card.project.enabled === true ? "Disable" : "Enable"
           onTriggered: root.runAction(card.project.enabled === true ? "disable" : "enable", card.project.id)
         }
+      }
+    }
+  }
+
+  component UpdateCard: Rectangle {
+    id: updateCard
+    required property var update
+    implicitHeight: updateCardContent.implicitHeight + Style.space(16)
+    color: Qt.rgba(root.barForeground.r, root.barForeground.g, root.barForeground.b, 0.055)
+    radius: Style.cornerRadius
+    border.color: update.updateable
+      ? Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.45)
+      : Qt.rgba(Color.urgent.r, Color.urgent.g, Color.urgent.b, 0.42)
+    border.width: 1
+
+    Column {
+      id: updateCardContent
+      anchors.left: parent.left
+      anchors.right: parent.right
+      anchors.top: parent.top
+      anchors.margins: Style.space(8)
+      spacing: Style.space(5)
+
+      Row {
+        width: parent.width
+        spacing: Style.space(8)
+        Column {
+          width: parent.width - updateButton.width - Style.space(8)
+          spacing: Style.space(2)
+          Text {
+            width: parent.width
+            text: updateCard.update.id
+            color: root.barForeground
+            font.family: root.bar ? root.bar.fontFamily : Style.font.family
+            font.pixelSize: Style.font.body
+            font.bold: true
+            elide: Text.ElideRight
+          }
+          Text {
+            width: parent.width
+            text: String(updateCard.update.state || "unknown").replace(/-/g, " ").toUpperCase()
+              + (Number(updateCard.update.behind || 0) > 0 ? " · " + updateCard.update.behind + " incoming" : "")
+              + (Number(updateCard.update.ahead || 0) > 0 ? " · " + updateCard.update.ahead + " local" : "")
+            color: updateCard.update.updateable ? Color.accent : Color.urgent
+            font.family: root.bar ? root.bar.fontFamily : Style.font.family
+            font.pixelSize: Style.font.caption
+            font.bold: true
+          }
+        }
+        WorkbenchButton {
+          id: updateButton
+          visible: updateCard.update.updateable
+          label: "Update"
+          enabled: !root.busy
+          onTriggered: root.applyUpdate(updateCard.update.id, updateCard.update.remoteRevision)
+        }
+      }
+
+      Text {
+        visible: updateCard.update.currentRevision && updateCard.update.remoteRevision
+        width: parent.width
+        text: String(updateCard.update.currentRevision || "").slice(0, 10)
+          + " → " + String(updateCard.update.remoteRevision || "").slice(0, 10)
+        color: Qt.rgba(root.barForeground.r, root.barForeground.g, root.barForeground.b, 0.58)
+        font.family: root.bar ? root.bar.fontFamily : Style.font.family
+        font.pixelSize: Style.font.caption
+      }
+
+      Text {
+        visible: updateCard.update.commits && updateCard.update.commits.length > 0
+        width: parent.width
+        text: root.incomingSummary(updateCard.update.commits)
+        color: root.barForeground
+        font.family: root.bar ? root.bar.fontFamily : Style.font.family
+        font.pixelSize: Style.font.caption
+        wrapMode: Text.Wrap
+      }
+
+      Text {
+        visible: Boolean(updateCard.update.diffStat)
+        width: parent.width
+        text: updateCard.update.diffStat || ""
+        color: Qt.rgba(root.barForeground.r, root.barForeground.g, root.barForeground.b, 0.62)
+        font.family: root.bar ? root.bar.fontFamily : Style.font.family
+        font.pixelSize: Style.font.caption
+        wrapMode: Text.Wrap
+        maximumLineCount: 6
+        elide: Text.ElideRight
+      }
+
+      Text {
+        visible: Boolean(updateCard.update.error)
+        width: parent.width
+        text: updateCard.update.error || ""
+        color: Color.urgent
+        font.family: root.bar ? root.bar.fontFamily : Style.font.family
+        font.pixelSize: Style.font.caption
+        wrapMode: Text.Wrap
+        maximumLineCount: 4
+        elide: Text.ElideRight
       }
     }
   }

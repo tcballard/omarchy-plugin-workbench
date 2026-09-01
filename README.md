@@ -27,7 +27,7 @@ It answers two different development needs explicitly:
 - **Snapshot** copies the plugin into an immutable, content-addressed deployment and atomically switches Omarchy to it. Previous managed deployments remain available for rollback.
 - **Test window** launches a disposable nested Hyprland compositor with an isolated Omarchy shell configuration and a live link to the project.
 
-The workbench does not scan your home directory, execute install hooks, invoke a shell for project checks, use `sudo`, publish plugins, or replace an installation it did not create.
+The workbench does not scan your home directory, execute install hooks, invoke a shell for project checks, use `sudo`, publish plugins, or replace an installation it did not create. Update discovery is limited to normal Git checkouts directly beneath Omarchy's documented plugins directory.
 
 ## Status
 
@@ -54,7 +54,27 @@ For each explicitly registered project, Workbench shows:
 - Whether the project definition changed after it was trusted.
 - Drift when the managed link changes outside Workbench.
 
-Available actions include Validate, Test, Test window, capability workflows, environment diagnostics, isolated sessions, handoffs, evidence, release readiness, Live link, Snapshot, Rollback, Enable, Disable, Undeploy, Logs, and Doctor.
+Available actions include Validate, Test, Test window, capability workflows, environment diagnostics, isolated sessions, handoffs, evidence, release readiness, Live link, Snapshot, Rollback, Enable, Disable, Undeploy, reviewed installed-plugin updates, Logs, and Doctor.
+
+## Review and apply installed plugin updates
+
+**Check updates** fetches `origin/HEAD` for normal Git checkouts directly beneath `~/.config/omarchy/plugins`. The panel shows incoming commit subjects, the revision transition, and a bounded diff stat. Dirty, locally ahead, diverged, and failed-fetch checkouts are visible but never offered for automatic application. Live development links and non-Git installations are ignored.
+
+An update is pinned to the full revision shown during review. Workbench refuses it if either the local checkout or remote revision changes before application. A confirmed update fast-forwards to that exact object, runs `omarchy plugin validate`, rolls back to the preceding revision on validation failure, and asks `omarchy-shell` to rescan after success.
+
+The panel's **Update** and **Update all** buttons carry the reviewed revisions automatically. The CLI keeps that decision explicit:
+
+```bash
+bin/omarchy-plugin-workbench updates --json
+bin/omarchy-plugin-workbench update io.github.example.plugin \
+  --revision FULL_40_CHARACTER_OBJECT_ID --yes
+bin/omarchy-plugin-workbench update-all \
+  --reviewed io.github.example.one=FULL_OBJECT_ID \
+  --reviewed io.github.example.two=FULL_OBJECT_ID \
+  --yes
+```
+
+Fetching and updating may contact plugin remotes. Updated plugin code still runs with your user permissions; review code you trust before applying it. Workbench does not schedule unattended updates.
 
 ## Build the local package
 
