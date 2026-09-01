@@ -19,12 +19,17 @@ Plugin Workbench treats plugin source, project configuration, shell logs, and in
 - Workflow capabilities require separate local approval and remain outside the shared project contract.
 - Checks are exact argv arrays; no shell is inserted. Direct `sudo`, `doas`, `su`, and `pkexec` invocations are refused.
 - Each check has a bounded timeout, a separate process group, null stdin, and 64 KiB stdout/stderr limits.
+- Nested test sessions use a private temporary HOME and XDG persistent directories while retaining the host runtime directory needed to connect the nested compositor to Wayland.
+- Nested Hyprland and Quickshell are separate owned process groups. Stop verifies each PID's Linux start time before signalling it, then erases only the recorded child beneath the Workbench test-session directory.
+- Nested shell configuration disables discovered first-party plugins and idle locking, then enables only the registered project plugin. The plugin source remains a live link for development.
 - The QML panel constructs process commands as arrays and never interpolates a project id or path into shell source.
 - The bundled x86-64 helper is an intentional reviewed binary. CI builds and tests the locked source, then independently verifies the committed executable's recorded SHA-256 and version. Native linker output is not claimed to be reproducible across build environments.
 
 ## Important limitation
 
 Trusted project commands and enabled Omarchy plugins execute with the current user's permissions. A script can invoke its own shell, use the network, write outside the project, or access anything the user can access. Capability approval and trust are review boundaries, not confinement.
+
+The disposable test window has the same limitation. It is a nested compositor with configuration/state separation, not a VM, container, user namespace, seccomp policy, or permission sandbox. It shares the user's kernel identity and may reach host files, network, D-Bus, PipeWire, secrets available to the user, and other session services. A malicious plugin can also deliberately escape its assigned process group. Test only code you are willing to run as your user.
 
 ## Non-goals
 

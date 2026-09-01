@@ -5,6 +5,7 @@ mod model;
 mod paths;
 mod process;
 mod registry;
+mod test_session;
 mod workbench;
 
 use crate::paths::AppPaths;
@@ -85,6 +86,12 @@ enum Command {
     Sessions { id: Option<String> },
     /// Mark a task session closed without deleting its worktree or branch.
     SessionClose { session_id: String },
+    /// Launch the plugin in a disposable nested Hyprland window.
+    TestSessionStart { id: String },
+    /// List disposable nested test sessions, optionally for one project.
+    TestSessions { id: Option<String> },
+    /// Stop and erase a project's disposable nested test session.
+    TestSessionStop { id: String },
     /// Record a structured, agent-neutral continuation handoff.
     Handoff {
         session_id: String,
@@ -168,6 +175,9 @@ fn run(cli: &Cli) -> Result<()> {
             let project = registry::find_project(&registry_config, id)?;
             if workbench::managed_deployment_exists(&paths, project)? {
                 bail!("project is still deployed; run undeploy before remove");
+            }
+            if test_session::active_count(&paths, &project.id)? > 0 {
+                bail!("project has a running nested test session; stop it before remove");
             }
             let project = registry::remove_project(&paths, id)?;
             emit(
@@ -351,6 +361,33 @@ fn run(cli: &Cli) -> Result<()> {
                 &format!("Closed session {}; worktree retained", session.id),
             )
         }
+        Command::TestSessionStart { id } => with_project(&paths, id, |project| {
+            let session = test_session::start(&paths, project)?;
+            emit(
+                cli.json,
+                &json!({"ok": true, "action": "test-session-start", "session": session}),
+                &format!(
+                    "Started disposable nested test session {} (not a security sandbox)",
+                    session.id
+                ),
+            )
+        }),
+        Command::TestSessions { id } => {
+            let sessions = test_session::list(&paths, id.as_deref())?;
+            emit(
+                cli.json,
+                &sessions,
+                &format!("{} nested test sessions", sessions.len()),
+            )
+        }
+        Command::TestSessionStop { id } => with_project(&paths, id, |project| {
+            let session = test_session::stop(&paths, project)?;
+            emit(
+                cli.json,
+                &json!({"ok": true, "action": "test-session-stop", "session": session}),
+                &format!("Stopped and erased nested test session {}", session.id),
+            )
+        }),
         Command::Handoff {
             session_id,
             decision,
@@ -400,9 +437,10 @@ fn run(cli: &Cli) -> Result<()> {
             let status = workbench::project_status(&paths, project, &enabled)?;
             let environment = workbench::inspect_environment(&paths, project)?;
             let sessions = coordination::list_sessions(&paths, Some(&project.id))?;
+            let test_sessions = test_session::list(&paths, Some(&project.id))?;
             let evidence = coordination::read_evidence(&paths, &project.id, 10)?;
             let ok = environment.ok;
-            let report = json!({"ok": ok, "project": status, "environment": environment, "sessions": sessions, "recentEvidence": evidence});
+            let report = json!({"ok": ok, "project": status, "environment": environment, "sessions": sessions, "testSessions": test_sessions, "recentEvidence": evidence});
             emit(
                 cli.json,
                 &report,

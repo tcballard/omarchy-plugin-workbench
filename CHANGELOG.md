@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add disposable nested Hyprland test windows with isolated Omarchy config/state, live plugin source, owned process lifecycle, and explicit non-sandbox boundaries.
 - Add isolated Git worktree sessions with optional local agent labels and non-destructive closure.
 - Add structured agent-neutral handoffs with revision and dirty-state evidence.
 - Add capability workflows, environment requirements, and separate local capability approval.

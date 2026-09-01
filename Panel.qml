@@ -407,6 +407,8 @@ Panel {
             width: parent.width
             text: Number(card.project.workflows || 0) + " workflows  ·  "
               + Number(card.project.activeSessions || 0) + " active sessions"
+              + (Number(card.project.activeTestSessions || 0) > 0
+                ? "  ·  NESTED TEST RUNNING" : "")
               + (card.project.definitionChangedSinceTrust ? "  ·  TRUST STALE" : "")
             color: card.project.definitionChangedSinceTrust ? Color.urgent
               : Qt.rgba(root.barForeground.r, root.barForeground.g, root.barForeground.b, 0.48)
@@ -447,6 +449,13 @@ Panel {
           onTriggered: root.runAction(card.project.projectChecksTrusted ? "untrust" : "trust", card.project.id)
         }
         WorkbenchButton { label: "Test"; onTriggered: root.runAction("check", card.project.id) }
+        WorkbenchButton {
+          label: Number(card.project.activeTestSessions || 0) > 0 ? "Stop test window" : "Test window"
+          onTriggered: root.runAction(
+            Number(card.project.activeTestSessions || 0) > 0
+              ? "test-session-stop" : "test-session-start",
+            card.project.id)
+        }
         WorkbenchButton { label: "Diagnose"; onTriggered: root.runAction("diagnose", card.project.id) }
         WorkbenchButton { label: "Release check"; onTriggered: root.runAction("release-check", card.project.id) }
         WorkbenchButton { label: "Live link"; onTriggered: root.runAction("link", card.project.id) }

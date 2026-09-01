@@ -25,6 +25,7 @@ It answers two different development needs explicitly:
 
 - **Live link** points Omarchy at the mutable plugin checkout for the fastest edit/reload loop.
 - **Snapshot** copies the plugin into an immutable, content-addressed deployment and atomically switches Omarchy to it. Previous managed deployments remain available for rollback.
+- **Test window** launches a disposable nested Hyprland compositor with an isolated Omarchy shell configuration and a live link to the project.
 
 The workbench does not scan your home directory, execute install hooks, invoke a shell for project checks, use `sudo`, publish plugins, or replace an installation it did not create.
 
@@ -49,11 +50,11 @@ For each explicitly registered project, Workbench shows:
 - Deployed revision.
 - Omarchy enabled/disabled state.
 - Whether project-defined checks are trusted.
-- Declared capability workflows and active isolated work sessions.
+- Declared capability workflows, active Git work sessions, and disposable nested test sessions.
 - Whether the project definition changed after it was trusted.
 - Drift when the managed link changes outside Workbench.
 
-Available actions include Validate, Test, capability workflows, environment diagnostics, isolated sessions, handoffs, evidence, release readiness, Live link, Snapshot, Rollback, Enable, Disable, Undeploy, Logs, and Doctor.
+Available actions include Validate, Test, Test window, capability workflows, environment diagnostics, isolated sessions, handoffs, evidence, release readiness, Live link, Snapshot, Rollback, Enable, Disable, Undeploy, Logs, and Doctor.
 
 ## Build the local package
 
@@ -88,6 +89,22 @@ bin/omarchy-plugin-workbench link io.github.example.plugin
 bin/omarchy-plugin-workbench snapshot io.github.example.plugin
 bin/omarchy-plugin-workbench rollback io.github.example.plugin
 ```
+
+## Disposable nested test window
+
+On an active Omarchy/Hyprland desktop, launch the registered plugin in a second Hyprland compositor running inside a normal window:
+
+```bash
+bin/omarchy-plugin-workbench test-session-start io.github.example.plugin
+bin/omarchy-plugin-workbench test-sessions io.github.example.plugin
+bin/omarchy-plugin-workbench test-session-stop io.github.example.plugin
+```
+
+The panel exposes the same lifecycle as **Test window** / **Stop test window**. The nested shell gets a private temporary HOME plus private XDG config, cache, state, and data directories. Its `shell.json` disables first-party non-bar plugins, turns off idle locking, and enables the project plugin. Bar widgets and replacement bars appear in the nested bar; panels, overlays, and menus are summoned after startup. The project source is live-linked, so Quickshell sees edits while the window is open.
+
+Stopping the session terminates the owned Quickshell and Hyprland process groups, verifies their Linux process start times to avoid killing reused PIDs, and erases the temporary tree. `release-check` blocks while a nested test session is active.
+
+This is process and configuration isolation, not a VM, container, or security sandbox. Plugin code runs as your user and retains access to the host filesystem, network, session D-Bus, audio, and other user services. Use it to protect the active desktop from accidental shell/config breakage—not to execute untrusted code safely.
 
 If a plugin lives in a subdirectory that is not `omarchy-plugin/`, specify it:
 
@@ -190,6 +207,7 @@ bin/omarchy-plugin-workbench release-check io.github.example.plugin
 | `~/.local/state/omarchy/plugin-workbench/deployments/` | Deployment history and active receipt |
 | `~/.local/state/omarchy/plugin-workbench/sessions/` | Isolated task worktrees |
 | `~/.local/state/omarchy/plugin-workbench/sessions.json` | Local session ownership and lifecycle |
+| `~/.local/state/omarchy/plugin-workbench/test-sessions/` | Disposable nested compositor homes, config, logs, and ownership records |
 | `~/.local/state/omarchy/plugin-workbench/handoffs/` | Structured continuation records |
 | `~/.local/state/omarchy/plugin-workbench/evidence/` | Append-only per-project evidence ledgers |
 | `~/.config/omarchy/plugins/<plugin-id>` | Atomic symlink controlled by Workbench |

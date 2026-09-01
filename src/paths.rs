@@ -15,6 +15,7 @@ pub struct AppPaths {
     pub receipts_dir: PathBuf,
     pub sessions_dir: PathBuf,
     pub sessions_file: PathBuf,
+    pub test_sessions_dir: PathBuf,
     pub handoffs_dir: PathBuf,
     pub evidence_dir: PathBuf,
     pub lock_file: PathBuf,
@@ -46,6 +47,7 @@ impl AppPaths {
             snapshots_dir: state_dir.join("snapshots"),
             receipts_dir: state_dir.join("deployments"),
             sessions_file: state_dir.join("sessions.json"),
+            test_sessions_dir: state_dir.join("test-sessions"),
             handoffs_dir: state_dir.join("handoffs"),
             evidence_dir: state_dir.join("evidence"),
             sessions_dir,
@@ -61,6 +63,7 @@ impl AppPaths {
             &self.snapshots_dir,
             &self.receipts_dir,
             &self.sessions_dir,
+            &self.test_sessions_dir,
             &self.handoffs_dir,
             &self.evidence_dir,
         ] {
