@@ -149,9 +149,10 @@ pub fn refresh(paths: &AppPaths) -> Result<RefreshReport> {
     }
     let _lock = RegistryLock::acquire(paths)?;
     secure_dir(&paths.marketplace_dir)?;
-    let temporary = paths
-        .marketplace_dir
-        .join(format!("catalog.tmp.{}.{}", std::process::id(), now_unix()));
+    let temporary =
+        paths
+            .marketplace_dir
+            .join(format!("catalog.tmp.{}.{}", std::process::id(), now_unix()));
     let temporary_file = OpenOptions::new()
         .create_new(true)
         .write(true)
@@ -249,7 +250,11 @@ pub fn search(paths: &AppPaths, filters: &SearchFilters<'_>) -> Result<SearchRep
         right
             .installed
             .cmp(&left.installed)
-            .then_with(|| left.name.to_ascii_lowercase().cmp(&right.name.to_ascii_lowercase()))
+            .then_with(|| {
+                left.name
+                    .to_ascii_lowercase()
+                    .cmp(&right.name.to_ascii_lowercase())
+            })
             .then_with(|| left.id.cmp(&right.id))
     });
     let matched = matches.len();
@@ -307,11 +312,16 @@ pub fn install(
     if target.exists() || target.is_symlink() {
         bail!("plugin '{id}' is already installed");
     }
-    let stage = paths
-        .plugins_dir
-        .join(format!(".workbench-marketplace.{}.{}", std::process::id(), now_unix()));
+    let stage = paths.plugins_dir.join(format!(
+        ".workbench-marketplace.{}.{}",
+        std::process::id(),
+        now_unix()
+    ));
     if stage.exists() || stage.is_symlink() {
-        bail!("marketplace staging path already exists: {}", stage.display());
+        bail!(
+            "marketplace staging path already exists: {}",
+            stage.display()
+        );
     }
 
     let install_result = (|| -> Result<()> {
@@ -327,15 +337,17 @@ pub fn install(
             ],
         )?;
         if !clone.ok {
-            bail!("could not clone reviewed repository: {}", check_output(&clone));
+            bail!(
+                "could not clone reviewed repository: {}",
+                check_output(&clone)
+            );
         }
-        let checkout = run_git(
-            paths,
-            &stage,
-            &["checkout", "--detach", reviewed_revision],
-        )?;
+        let checkout = run_git(paths, &stage, &["checkout", "--detach", reviewed_revision])?;
         if !checkout.ok {
-            bail!("reviewed revision is unavailable: {}", check_output(&checkout));
+            bail!(
+                "reviewed revision is unavailable: {}",
+                check_output(&checkout)
+            );
         }
         let actual_revision = git_stdout(paths, &stage, &["rev-parse", "HEAD"])?;
         if actual_revision != reviewed_revision {
@@ -362,7 +374,9 @@ pub fn install(
 
     let mut warnings = Vec::new();
     if let Err(error) = rescan_shell(paths) {
-        warnings.push(format!("installed and validated, but shell rescan failed: {error:#}"));
+        warnings.push(format!(
+            "installed and validated, but shell rescan failed: {error:#}"
+        ));
     }
     let enabled = if enable && warnings.is_empty() {
         match enable_plugin(paths, id) {
@@ -410,8 +424,7 @@ fn read_catalog_path(path: &Path) -> Result<Catalog> {
         bail!("marketplace catalogue exceeds the allowed size boundary");
     }
     let bytes = fs::read(path).context("read marketplace catalogue")?;
-    let catalog: Catalog =
-        serde_json::from_slice(&bytes).context("parse marketplace catalogue")?;
+    let catalog: Catalog = serde_json::from_slice(&bytes).context("parse marketplace catalogue")?;
     validate_catalog(&catalog)?;
     Ok(catalog)
 }
@@ -445,7 +458,10 @@ fn validate_catalog(catalog: &Catalog) -> Result<()> {
         validate_field(&plugin.source_type, "sourceType", 128)?;
         validate_field(&plugin.repo, "repo", 2_048)?;
         if plugin.tags.len() > 16 || plugin.tags.iter().any(|tag| tag.len() > 64) {
-            bail!("marketplace tags exceed the supported boundary for '{}'", plugin.id);
+            bail!(
+                "marketplace tags exceed the supported boundary for '{}'",
+                plugin.id
+            );
         }
         if !ids.insert(&plugin.id) {
             bail!("duplicate marketplace plugin id '{}'", plugin.id);
@@ -488,9 +504,14 @@ fn matches_filters(
         && filters
             .category
             .is_none_or(|value| plugin.category.eq_ignore_ascii_case(value))
-        && filters.kind.is_none_or(|value| plugin.kind.eq_ignore_ascii_case(value))
+        && filters
+            .kind
+            .is_none_or(|value| plugin.kind.eq_ignore_ascii_case(value))
         && filters.tag.is_none_or(|value| {
-            plugin.tags.iter().any(|tag| tag.eq_ignore_ascii_case(value))
+            plugin
+                .tags
+                .iter()
+                .any(|tag| tag.eq_ignore_ascii_case(value))
         })
         && (!filters.built_in_only || plugin.built_in || plugin.source_type == "builtin")
         && (!filters.verified_only || plugin.verification_status == "verified")
@@ -544,8 +565,7 @@ fn validate_plugin_id(id: &str) -> Result<()> {
     if id.is_empty()
         || id.contains("..")
         || !id.chars().enumerate().all(|(index, character)| {
-            character.is_ascii_alphanumeric()
-                || (index > 0 && matches!(character, '.' | '_' | '-'))
+            character.is_ascii_alphanumeric() || (index > 0 && matches!(character, '.' | '_' | '-'))
         })
     {
         bail!("invalid marketplace plugin id '{id}'");

@@ -706,7 +706,10 @@ fn marketplace_searches_the_cached_official_catalogue_and_marks_installed_plugin
     assert_eq!(search["total"], 2);
     assert_eq!(search["matched"], 1);
     assert_eq!(search["plugins"][0]["id"], MARKETPLACE_ID);
-    assert_eq!(search["plugins"][0]["reviewedRevision"], MARKETPLACE_REVISION);
+    assert_eq!(
+        search["plugins"][0]["reviewedRevision"],
+        MARKETPLACE_REVISION
+    );
     assert_eq!(search["plugins"][0]["installable"], true);
 
     fs::create_dir_all(
@@ -762,7 +765,9 @@ fn marketplace_installs_and_enables_only_the_exact_reviewed_revision() {
     assert!(
         harness
             .home
-            .join(format!(".config/omarchy/plugins/{MARKETPLACE_ID}/Panel.qml"))
+            .join(format!(
+                ".config/omarchy/plugins/{MARKETPLACE_ID}/Panel.qml"
+            ))
             .is_file()
     );
     let calls = fs::read_to_string(log).unwrap();
@@ -794,7 +799,12 @@ fn marketplace_install_refuses_missing_confirmation_and_stale_review() {
     );
     assert!(!unconfirmed.status.success());
     let error: Value = serde_json::from_slice(&unconfirmed.stdout).unwrap();
-    assert!(error["error"].as_str().unwrap().contains("explicit confirmation"));
+    assert!(
+        error["error"]
+            .as_str()
+            .unwrap()
+            .contains("explicit confirmation")
+    );
 
     let stale_revision = "ffffffffffffffffffffffffffffffffffffffff";
     let stale = harness.run_with_tools(
@@ -813,7 +823,12 @@ fn marketplace_install_refuses_missing_confirmation_and_stale_review() {
     );
     assert!(!stale.status.success());
     let error: Value = serde_json::from_slice(&stale.stdout).unwrap();
-    assert!(error["error"].as_str().unwrap().contains("changed since review"));
+    assert!(
+        error["error"]
+            .as_str()
+            .unwrap()
+            .contains("changed since review")
+    );
     assert!(!log.exists() || !fs::read_to_string(&log).unwrap().contains("git "));
 }
 
@@ -828,5 +843,10 @@ fn marketplace_rejects_a_symlinked_catalogue_cache() {
     let output = harness.run(&["marketplace-search", "--json"]);
     assert!(!output.status.success());
     let error: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert!(error["error"].as_str().unwrap().contains("not a normal file"));
+    assert!(
+        error["error"]
+            .as_str()
+            .unwrap()
+            .contains("not a normal file")
+    );
 }
