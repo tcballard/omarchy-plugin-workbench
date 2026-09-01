@@ -59,7 +59,7 @@ impl Harness {
     }
 
     fn run_with_tools(&self, args: &[&str], tools: &Path, log: &Path) -> Output {
-        let mut search_path = vec![tools.clone()];
+        let mut search_path = vec![tools.to_path_buf()];
         search_path.extend(std::env::split_paths(
             &std::env::var_os("PATH").unwrap_or_default(),
         ));

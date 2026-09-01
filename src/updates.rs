@@ -186,13 +186,13 @@ pub fn apply_all(
             });
         }
     }
-    if !updated.is_empty() {
-        if let Err(error) = rescan_shell(paths) {
-            failed.push(UpdateFailure {
-                id: "shell-rescan".to_owned(),
-                error: format!("updates were validated but the shell rescan failed: {error:#}"),
-            });
-        }
+    if !updated.is_empty()
+        && let Err(error) = rescan_shell(paths)
+    {
+        failed.push(UpdateFailure {
+            id: "shell-rescan".to_owned(),
+            error: format!("updates were validated but the shell rescan failed: {error:#}"),
+        });
     }
     let ok = failed.is_empty();
     let message = if updated.is_empty() && failed.is_empty() {
