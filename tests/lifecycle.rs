@@ -102,7 +102,11 @@ impl Harness {
 }
 
 fn git(cwd: &std::path::Path, args: &[&str]) -> String {
-    let output = Command::new("git").args(args).current_dir(cwd).output().unwrap();
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(cwd)
+        .output()
+        .unwrap();
     assert!(
         output.status.success(),
         "git {:?} failed: {}",
@@ -466,12 +470,7 @@ fn update_review_reports_the_pinned_revision_commits_and_diff_stat() {
     assert_eq!(update["remoteRevision"], remote);
     assert_eq!(update["behind"], 1);
     assert_eq!(update["commits"][0]["subject"], "show reviewed update");
-    assert!(
-        update["diffStat"]
-            .as_str()
-            .unwrap()
-            .contains("Panel.qml")
-    );
+    assert!(update["diffStat"].as_str().unwrap().contains("Panel.qml"));
 }
 
 #[test]
@@ -517,7 +516,10 @@ fn update_applies_only_the_reviewed_revision_then_validates_and_rescans() {
     );
     let result: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(result["updated"][0], "io.test.workbench-demo");
-    assert_eq!(git(&harness.installed_target(), &["rev-parse", "HEAD"]), remote);
+    assert_eq!(
+        git(&harness.installed_target(), &["rev-parse", "HEAD"]),
+        remote
+    );
     let calls = fs::read_to_string(log).unwrap();
     assert!(calls.contains("omarchy plugin validate"));
     assert!(calls.contains("omarchy-shell shell rescanPlugins"));
@@ -549,7 +551,10 @@ fn update_refuses_stale_review_and_rolls_back_failed_validation() {
             .unwrap()
             .contains("changed since review")
     );
-    assert_eq!(git(&harness.installed_target(), &["rev-parse", "HEAD"]), current);
+    assert_eq!(
+        git(&harness.installed_target(), &["rev-parse", "HEAD"]),
+        current
+    );
 
     let failed = harness.run_with_tools(
         &[
@@ -566,6 +571,9 @@ fn update_refuses_stale_review_and_rolls_back_failed_validation() {
     assert!(!failed.status.success());
     let failure: Value = serde_json::from_slice(&failed.stdout).unwrap();
     assert!(failure["error"].as_str().unwrap().contains("rolled back"));
-    assert_eq!(git(&harness.installed_target(), &["rev-parse", "HEAD"]), current);
+    assert_eq!(
+        git(&harness.installed_target(), &["rev-parse", "HEAD"]),
+        current
+    );
     assert!(!fs::read_to_string(log).unwrap().contains("omarchy-shell"));
 }

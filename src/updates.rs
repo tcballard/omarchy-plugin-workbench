@@ -199,7 +199,10 @@ pub fn apply_all(
         if skipped.is_empty() {
             "All Git-managed plugins are up to date".to_owned()
         } else {
-            format!("No safe updates applied; {} plugin(s) need attention", skipped.len())
+            format!(
+                "No safe updates applied; {} plugin(s) need attention",
+                skipped.len()
+            )
         }
     } else {
         format!(
@@ -236,7 +239,10 @@ fn parse_reviewed(values: &[String]) -> Result<BTreeMap<String, String>> {
             bail!("invalid plugin id '{id}'");
         }
         validate_revision(revision)?;
-        if reviewed.insert(id.to_owned(), revision.to_owned()).is_some() {
+        if reviewed
+            .insert(id.to_owned(), revision.to_owned())
+            .is_some()
+        {
             bail!("plugin '{id}' was reviewed more than once");
         }
     }
@@ -269,7 +275,9 @@ fn installed_git_plugins(
             let entry = entry.context("read installed plugin entry")?;
             entries_seen += 1;
             if entries_seen > MAX_INSTALLED_PLUGINS {
-                bail!("more than {MAX_INSTALLED_PLUGINS} installed plugins; narrow the request by id");
+                bail!(
+                    "more than {MAX_INSTALLED_PLUGINS} installed plugins; narrow the request by id"
+                );
             }
             let id = entry.file_name().to_string_lossy().into_owned();
             if !valid_plugin_id(&id) {
@@ -426,8 +434,7 @@ fn valid_plugin_id(id: &str) -> bool {
     !id.is_empty()
         && !id.contains("..")
         && id.chars().enumerate().all(|(index, character)| {
-            character.is_ascii_alphanumeric()
-                || (index > 0 && matches!(character, '.' | '_' | '-'))
+            character.is_ascii_alphanumeric() || (index > 0 && matches!(character, '.' | '_' | '-'))
         })
 }
 
@@ -485,7 +492,10 @@ fn apply_reviewed(paths: &AppPaths, plugin: &PluginUpdate, rescan: bool) -> Resu
     }
     let merge = run_git(paths, &directory, &["merge", "--ff-only", expected_remote])?;
     if !merge.ok {
-        bail!("cannot fast-forward to the reviewed revision: {}", check_output(&merge));
+        bail!(
+            "cannot fast-forward to the reviewed revision: {}",
+            check_output(&merge)
+        );
     }
     if git_stdout(paths, &directory, &["rev-parse", "HEAD"])? != expected_remote {
         let _ = run_git(paths, &directory, &["reset", "--hard", expected_current]);
@@ -562,7 +572,14 @@ fn check_output(result: &CheckResult) -> String {
         .collect::<Vec<_>>()
         .join("\n");
     if result.timed_out {
-        format!("command timed out{}", if output.is_empty() { String::new() } else { format!(": {output}") })
+        format!(
+            "command timed out{}",
+            if output.is_empty() {
+                String::new()
+            } else {
+                format!(": {output}")
+            }
+        )
     } else if output.is_empty() {
         format!("command exited with {:?}", result.exit_code)
     } else {
