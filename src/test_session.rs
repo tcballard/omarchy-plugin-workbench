@@ -18,11 +18,15 @@ const SESSION_SCHEMA: u32 = 1;
 const MAX_RECORD_BYTES: u64 = 256 * 1024;
 const START_TIMEOUT: Duration = Duration::from_secs(12);
 const STOP_TIMEOUT: Duration = Duration::from_secs(3);
-const ISOLATION_NOTICE: &str = "isolated HOME and XDG persistent state; same-user process, not a VM or security sandbox";
+const ISOLATION_NOTICE: &str =
+    "isolated HOME and XDG persistent state; same-user process, not a VM or security sandbox";
 
 pub fn start(paths: &AppPaths, project: &Project) -> Result<TestSessionRecord> {
     let _lock = RegistryLock::acquire(paths)?;
-    if list_unlocked(paths, Some(&project.id))?.iter().any(|entry| entry.running) {
+    if list_unlocked(paths, Some(&project.id))?
+        .iter()
+        .any(|entry| entry.running)
+    {
         bail!("project already has a running nested test session; stop it first");
     }
     require_host()?;
@@ -100,8 +104,8 @@ fn start_prepared(
     compositor.process_group(0);
     let mut compositor = compositor.spawn().context("start nested Hyprland")?;
     let compositor_pid = compositor.id();
-    let compositor_start_ticks = process_start_ticks(compositor_pid)
-        .context("read nested Hyprland process identity")?;
+    let compositor_start_ticks =
+        process_start_ticks(compositor_pid).context("read nested Hyprland process identity")?;
 
     let (instance, display) = match wait_for_instance(&mut compositor, compositor_pid) {
         Ok(value) => value,
@@ -151,7 +155,10 @@ fn start_prepared(
     match shell.try_wait().context("check isolated shell startup") {
         Ok(Some(status)) => {
             terminate_group(&mut compositor, compositor_start_ticks);
-            bail!("isolated Omarchy shell exited during startup ({status}); see {}", log_path.display());
+            bail!(
+                "isolated Omarchy shell exited during startup ({status}); see {}",
+                log_path.display()
+            );
         }
         Err(error) => {
             terminate_group(&mut shell, shell_start_ticks);
@@ -230,7 +237,10 @@ fn list_unlocked(paths: &AppPaths, project_id: Option<&str>) -> Result<Vec<TestS
         let metadata = fs::symlink_metadata(&record_path)
             .with_context(|| format!("inspect {}", record_path.display()))?;
         if metadata.file_type().is_symlink() || !metadata.is_file() {
-            bail!("nested session record is not a regular file: {}", record_path.display());
+            bail!(
+                "nested session record is not a regular file: {}",
+                record_path.display()
+            );
         }
         if metadata.len() > MAX_RECORD_BYTES {
             bail!("nested session record exceeds {MAX_RECORD_BYTES} bytes");
@@ -245,7 +255,10 @@ fn list_unlocked(paths: &AppPaths, project_id: Option<&str>) -> Result<Vec<TestS
         }
         let running = process_matches(record.compositor_pid, record.compositor_start_ticks)
             && process_matches(record.shell_pid, record.shell_start_ticks);
-        sessions.push(TestSessionStatus { session: record, running });
+        sessions.push(TestSessionStatus {
+            session: record,
+            running,
+        });
     }
     sessions.sort_by_key(|entry| entry.session.started_at_unix);
     Ok(sessions)
@@ -255,7 +268,10 @@ pub fn stop(paths: &AppPaths, project: &Project) -> Result<TestSessionRecord> {
     let _lock = RegistryLock::acquire(paths)?;
     let mut candidates = list_unlocked(paths, Some(&project.id))?;
     candidates.sort_by_key(|entry| std::cmp::Reverse(entry.session.started_at_unix));
-    let status = candidates.into_iter().next().context("project has no nested test session")?;
+    let status = candidates
+        .into_iter()
+        .next()
+        .context("project has no nested test session")?;
     let record = status.session;
     terminate_pid_group(record.shell_pid, record.shell_start_ticks)?;
     terminate_pid_group(record.compositor_pid, record.compositor_start_ticks)?;
@@ -282,7 +298,9 @@ fn omarchy_path() -> Result<PathBuf> {
     let path = std::env::var_os("OMARCHY_PATH")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("/usr/share/omarchy"));
-    let canonical = path.canonicalize().with_context(|| format!("resolve OMARCHY_PATH {}", path.display()))?;
+    let canonical = path
+        .canonicalize()
+        .with_context(|| format!("resolve OMARCHY_PATH {}", path.display()))?;
     if !canonical.is_dir() {
         bail!("OMARCHY_PATH is not a directory: {}", canonical.display());
     }
@@ -302,7 +320,10 @@ fn remove_session_root(paths: &AppPaths, root: &Path) -> Result<()> {
     }
     let meta = fs::symlink_metadata(root).with_context(|| format!("inspect {}", root.display()))?;
     if meta.file_type().is_symlink() || !meta.is_dir() {
-        bail!("nested session root is not a real directory: {}", root.display());
+        bail!(
+            "nested session root is not a real directory: {}",
+            root.display()
+        );
     }
     fs::remove_dir_all(root).with_context(|| format!("erase disposable session {}", root.display()))
 }
@@ -311,9 +332,14 @@ fn write_private(path: &Path, bytes: &[u8]) -> Result<()> {
     if let Some(parent) = path.parent() {
         secure_dir(parent)?;
     }
-    let mut file = OpenOptions::new().create_new(true).write(true).mode(0o600).open(path)
+    let mut file = OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .mode(0o600)
+        .open(path)
         .with_context(|| format!("create {}", path.display()))?;
-    file.write_all(bytes).with_context(|| format!("write {}", path.display()))?;
+    file.write_all(bytes)
+        .with_context(|| format!("write {}", path.display()))?;
     file.write_all(b"\n")?;
     file.sync_all()?;
     Ok(())
@@ -330,7 +356,8 @@ misc {
 }
 input { kb_layout = us }
 bind = SUPER SHIFT, Q, exit,
-"#.to_owned()
+"#
+    .to_owned()
 }
 
 fn shell_config(manifest: &ValidatedManifest, disabled: &[String]) -> Value {
@@ -347,7 +374,11 @@ fn shell_config(manifest: &ValidatedManifest, disabled: &[String]) -> Value {
         center.push(json!({"id": manifest.id}));
         bar["layout"]["center"] = json!(center);
     }
-    if manifest.kinds.iter().any(|kind| matches!(kind.as_str(), "panel" | "overlay" | "menu" | "service")) {
+    if manifest
+        .kinds
+        .iter()
+        .any(|kind| matches!(kind.as_str(), "panel" | "overlay" | "menu" | "service"))
+    {
         plugins.push(json!({"id": manifest.id}));
     }
     json!({
@@ -363,7 +394,12 @@ fn first_party_plugin_ids(shell_path: &Path) -> Result<Vec<String>> {
     let mut ids = Vec::new();
     for entry in walkdir::WalkDir::new(shell_path.join("plugins")).follow_links(false) {
         let entry = entry?;
-        if !entry.file_type().is_file() || !entry.file_name().to_string_lossy().ends_with("manifest.json") {
+        if !entry.file_type().is_file()
+            || !entry
+                .file_name()
+                .to_string_lossy()
+                .ends_with("manifest.json")
+        {
             continue;
         }
         let value: Value = match serde_json::from_slice(&fs::read(entry.path())?) {
@@ -443,12 +479,22 @@ fn wait_for_instance(child: &mut Child, pid: u32) -> Result<(String, String)> {
 fn hyprland_instance(pid: u32) -> Option<(String, String)> {
     for args in [["instances", "-j"], ["-j", "instances"]] {
         let output = Command::new("hyprctl").args(args).output().ok()?;
-        if !output.status.success() { continue; }
+        if !output.status.success() {
+            continue;
+        }
         let values: Vec<Value> = serde_json::from_slice(&output.stdout).ok()?;
         for value in values {
-            if value.get("pid").and_then(Value::as_u64) != Some(u64::from(pid)) { continue; }
-            let instance = value.get("instance").or_else(|| value.get("instance_signature"))?.as_str()?;
-            let display = value.get("wl_socket").or_else(|| value.get("waylandSocket"))?.as_str()?;
+            if value.get("pid").and_then(Value::as_u64) != Some(u64::from(pid)) {
+                continue;
+            }
+            let instance = value
+                .get("instance")
+                .or_else(|| value.get("instance_signature"))?
+                .as_str()?;
+            let display = value
+                .get("wl_socket")
+                .or_else(|| value.get("waylandSocket"))?
+                .as_str()?;
             return Some((instance.to_owned(), display.to_owned()));
         }
     }
@@ -499,15 +545,21 @@ fn terminate_pid_group(pid: u32, expected_ticks: u64) -> Result<()> {
     }
     // SAFETY: the process identity was checked against its Linux start time and
     // every nested-session child is launched as leader of its own process group.
-    unsafe { libc::kill(-(pid as i32), libc::SIGTERM); }
+    unsafe {
+        libc::kill(-(pid as i32), libc::SIGTERM);
+    }
     let started = Instant::now();
     while started.elapsed() < STOP_TIMEOUT {
-        if !process_matches(pid, expected_ticks) { return Ok(()); }
+        if !process_matches(pid, expected_ticks) {
+            return Ok(());
+        }
         thread::sleep(Duration::from_millis(50));
     }
     if process_matches(pid, expected_ticks) {
         // SAFETY: identity is checked again immediately before escalation.
-        unsafe { libc::kill(-(pid as i32), libc::SIGKILL); }
+        unsafe {
+            libc::kill(-(pid as i32), libc::SIGKILL);
+        }
     }
     Ok(())
 }
@@ -519,7 +571,9 @@ mod tests {
     #[test]
     fn generated_config_enables_only_target_shapes() {
         let manifest = ValidatedManifest {
-            id: "io.test.panel".into(), name: "Panel".into(), version: "1".into(),
+            id: "io.test.panel".into(),
+            name: "Panel".into(),
+            version: "1".into(),
             kinds: vec!["panel".into(), "bar-widget".into()],
         };
         let value = shell_config(&manifest, &["omarchy.lock".into()]);
@@ -540,7 +594,11 @@ mod tests {
     #[test]
     fn cleanup_rejects_parent_directory() {
         let temp = tempfile::tempdir().unwrap();
-        let paths = AppPaths::from_bases(temp.path().join("home"), temp.path().join("config"), temp.path().join("state"));
+        let paths = AppPaths::from_bases(
+            temp.path().join("home"),
+            temp.path().join("config"),
+            temp.path().join("state"),
+        );
         paths.ensure().unwrap();
         assert!(remove_session_root(&paths, &paths.test_sessions_dir).is_err());
     }
