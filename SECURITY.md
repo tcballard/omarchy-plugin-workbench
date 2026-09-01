@@ -26,6 +26,8 @@ Plugin Workbench treats plugin source, project configuration, shell logs, and in
 - Update discovery examines at most 128 normal direct children of Omarchy's plugins directory, ignores symlinks and non-Git installs, invokes Git without a shell, and bounds command time and output.
 - Updates require an explicit reviewed 40-character revision and confirmation. They refuse dirty, locally ahead, diverged, moved-local, and moved-remote states.
 - A reviewed update fast-forwards only to the pinned object. Omarchy validation runs before the requested shell rescan; failure resets the checkout to its exact preceding revision, and rescan occurs only after validation succeeds.
+- Marketplace refresh downloads one fixed HTTPS catalogue URL with redirect protocol, size, timeout, schema, production-mode, field, count, and duplicate-id bounds. The owner-only cache must remain a normal file.
+- Marketplace installs accept only community root plugins with a GitHub HTTPS repository and full reviewed commit matching the current cache. Git hooks and filesystem monitors are disabled, the detached object is verified, the manifest id must match, and both internal and Omarchy validation precede publication.
 - The bundled x86-64 helper is an intentional reviewed binary. CI builds and tests the locked source, then independently verifies the committed executable's recorded SHA-256 and version. Native linker output is not claimed to be reproducible across build environments.
 
 ## Important limitation
@@ -33,6 +35,8 @@ Plugin Workbench treats plugin source, project configuration, shell logs, and in
 Trusted project commands and enabled Omarchy plugins execute with the current user's permissions. A script can invoke its own shell, use the network, write outside the project, or access anything the user can access. Capability approval and trust are review boundaries, not confinement.
 
 Update discovery contacts the configured Git remote. Git configuration and credentials are part of the user's existing trust boundary. Applying an update changes an installed checkout; filesystem watchers may observe those files before validation completes, and newly updated plugin code may run during shell rescan.
+
+The marketplace catalogue is public network input authenticated by HTTPS, not a signed package index or a code audit. Its reviewed commit prevents Workbench from silently following a moving branch between review and install. Cloning and validation still process untrusted Git data and plugin files, and enabling an installed plugin executes third-party code as the user.
 
 The disposable test window has the same limitation. It is a nested compositor with configuration/state separation, not a VM, container, user namespace, seccomp policy, or permission sandbox. It shares the user's kernel identity and may reach host files, network, D-Bus, PipeWire, secrets available to the user, and other session services. A malicious plugin can also deliberately escape its assigned process group. Test only code you are willing to run as your user.
 
