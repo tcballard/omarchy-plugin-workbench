@@ -1,8 +1,8 @@
 use crate::deploy::git_state;
 use crate::manifest;
-use crate::model::Project;
+use crate::model::{EvidenceRecord, Project, SessionRecord};
 use crate::paths::{AppPaths, secure_dir};
-use crate::registry::now_unix;
+use crate::registry::{RegistryLock, now_unix};
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -162,6 +162,77 @@ pub struct ImportedReview {
     pub message: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewSummary {
+    pub result: String,
+    pub status: String,
+    pub current: bool,
+    pub revision: String,
+    pub reviewer: String,
+    pub reviewed_at_unix: u64,
+    pub findings: usize,
+    pub severity_counts: BTreeMap<String, usize>,
+    pub blockers: usize,
+    pub residual_risks: usize,
+    pub executable_artifacts: usize,
+    pub report_file: PathBuf,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewHistory {
+    pub ok: bool,
+    pub project_id: String,
+    pub current_revision: Option<String>,
+    pub dirty: bool,
+    pub reviews: Vec<ReviewSummary>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewDetails {
+    pub ok: bool,
+    pub project_id: String,
+    pub status: String,
+    pub current: bool,
+    pub report_file: PathBuf,
+    pub review: SecurityReview,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemediationSession {
+    pub ok: bool,
+    pub project_id: String,
+    pub review_revision: String,
+    pub finding_ids: Vec<String>,
+    pub review_file: PathBuf,
+    pub brief_file: PathBuf,
+    pub input_file: PathBuf,
+    pub session: SessionRecord,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SecurityDossier {
+    pub ok: bool,
+    pub project_id: String,
+    pub plugin_id: String,
+    pub plugin_name: String,
+    pub plugin_version: String,
+    pub revision: String,
+    pub result: String,
+    pub report_sha256: String,
+    pub findings: usize,
+    pub executable_artifacts: usize,
+    pub evidence_records: usize,
+    pub dossier_file: PathBuf,
+    pub json_file: PathBuf,
+    pub message: String,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ReviewInput<'a> {
@@ -264,21 +335,28 @@ pub fn import_review(
     validate_review(project, &revision, &review)?;
     let current_inventory = inventory(&project.project_root)?;
     validate_ready_claim(&review, &current_inventory)?;
-    validate_fix_coverage(paths, project, &review)?;
-    review.reviewed_at_unix = now_unix();
+    let report_file = {
+        let _lock = RegistryLock::acquire(paths)?;
+        validate_fix_coverage(paths, project, &review)?;
+        let previous_timestamp = latest_review(paths, &project.id)?
+            .map(|(_, previous)| previous.reviewed_at_unix)
+            .unwrap_or_default();
+        review.reviewed_at_unix = now_unix().max(previous_timestamp.saturating_add(1));
 
-    let records = paths.security_reviews_dir.join(&project.id).join("records");
-    secure_dir(&records)?;
-    let encoded = serde_json::to_vec(&review)?;
-    let fingerprint = format!("{:x}", Sha256::digest(&encoded));
-    let report_file = records.join(format!(
-        "{}-{}-{}-{}.json",
-        review.reviewed_at_unix,
-        &revision[..12],
-        review.result.as_str(),
-        &fingerprint[..12]
-    ));
-    write_private_json(&report_file, &review)?;
+        let records = paths.security_reviews_dir.join(&project.id).join("records");
+        secure_dir(&records)?;
+        let encoded = serde_json::to_vec(&review)?;
+        let fingerprint = format!("{:x}", Sha256::digest(&encoded));
+        let report_file = records.join(format!(
+            "{}-{}-{}-{}.json",
+            review.reviewed_at_unix,
+            &revision[..12],
+            review.result.as_str(),
+            &fingerprint[..12]
+        ));
+        write_private_json(&report_file, &review)?;
+        report_file
+    };
     let ready = review.result == ReviewResult::Ready;
     let evidence = crate::coordination::evidence_record(
         project,
@@ -354,6 +432,426 @@ pub fn status(paths: &AppPaths, project: &Project) -> Result<SecurityReviewStatu
             format!("Manual security review status is {status}")
         },
     })
+}
+
+pub fn history(paths: &AppPaths, project: &Project, limit: usize) -> Result<ReviewHistory> {
+    if limit == 0 || limit > 100 {
+        bail!("security review history limit must be between 1 and 100");
+    }
+    let git = git_state(&project.project_root);
+    let mut reviews = load_reviews(paths, &project.id)?;
+    reviews.truncate(limit);
+    let reviews = reviews
+        .into_iter()
+        .map(|(report_file, review)| {
+            let current = !git.dirty && git.revision.as_deref() == Some(review.revision.as_str());
+            let mut severity_counts = BTreeMap::new();
+            for finding in &review.findings {
+                *severity_counts.entry(finding.severity.clone()).or_insert(0) += 1;
+            }
+            ReviewSummary {
+                result: review.result.as_str().to_owned(),
+                status: if current {
+                    review.result.as_str().to_owned()
+                } else {
+                    "stale".to_owned()
+                },
+                current,
+                revision: review.revision,
+                reviewer: review.reviewer,
+                reviewed_at_unix: review.reviewed_at_unix,
+                findings: review.findings.len(),
+                severity_counts,
+                blockers: review.remaining_blockers.len(),
+                residual_risks: review.residual_risks.len(),
+                executable_artifacts: review.executable_artifacts.len(),
+                report_file,
+            }
+        })
+        .collect::<Vec<_>>();
+    Ok(ReviewHistory {
+        ok: true,
+        project_id: project.id.clone(),
+        current_revision: git.revision,
+        dirty: git.dirty,
+        reviews,
+    })
+}
+
+pub fn show(
+    paths: &AppPaths,
+    project: &Project,
+    revision: Option<&str>,
+) -> Result<ReviewDetails> {
+    if let Some(revision) = revision {
+        validate_revision(revision)?;
+    }
+    let git = git_state(&project.project_root);
+    let selected = load_reviews(paths, &project.id)?
+        .into_iter()
+        .find(|(_, review)| revision.is_none_or(|wanted| wanted == review.revision))
+        .with_context(|| match revision {
+            Some(value) => format!("no security review exists for revision {value}"),
+            None => "no imported manual security review exists".to_owned(),
+        })?;
+    let current = !git.dirty && git.revision.as_deref() == Some(selected.1.revision.as_str());
+    Ok(ReviewDetails {
+        ok: true,
+        project_id: project.id.clone(),
+        status: if current {
+            selected.1.result.as_str().to_owned()
+        } else {
+            "stale".to_owned()
+        },
+        current,
+        report_file: selected.0,
+        review: selected.1,
+    })
+}
+
+pub fn start_remediation(
+    paths: &AppPaths,
+    project: &Project,
+    finding_ids: &[String],
+    agent: Option<&str>,
+) -> Result<RemediationSession> {
+    let git = exact_clean_git(project)?;
+    let revision = git.revision.expect("validated exact Git revision");
+    let (review_file, review) = latest_review(paths, &project.id)?
+        .context("security remediation requires an imported review with findings")?;
+    if review.revision != revision {
+        bail!(
+            "latest security review is stale; prepare a fix-verification review for the current commit"
+        );
+    }
+    if review.findings.is_empty() {
+        bail!("latest security review contains no findings to remediate");
+    }
+    if finding_ids.len() > 32 {
+        bail!("security remediation accepts at most 32 finding ids");
+    }
+    let requested = finding_ids.iter().map(String::as_str).collect::<BTreeSet<_>>();
+    if requested.len() != finding_ids.len() {
+        bail!("security remediation finding ids must be unique");
+    }
+    let selected = review
+        .findings
+        .iter()
+        .filter(|finding| requested.is_empty() || requested.contains(finding.id.as_str()))
+        .cloned()
+        .collect::<Vec<_>>();
+    if selected.len() != requested.len() && !requested.is_empty() {
+        let known = review
+            .findings
+            .iter()
+            .map(|finding| finding.id.as_str())
+            .collect::<BTreeSet<_>>();
+        let missing = requested.difference(&known).copied().collect::<Vec<_>>();
+        bail!("unknown security finding id(s): {}", missing.join(", "));
+    }
+    let selected_ids = selected
+        .iter()
+        .map(|finding| finding.id.clone())
+        .collect::<Vec<_>>();
+    let timestamp = now_unix();
+    let task_key = remediation_slug(&selected_ids[0]);
+    let task = format!("security-{task_key}-{timestamp}");
+    let remediation_dir = paths
+        .security_reviews_dir
+        .join(&project.id)
+        .join("remediation")
+        .join(&revision)
+        .join(&task);
+    secure_dir(&remediation_dir)?;
+    let input_file = remediation_dir.join("findings.json");
+    let brief_file = remediation_dir.join("remediation.md");
+    write_private_json(
+        &input_file,
+        &serde_json::json!({
+            "schemaVersion": REVIEW_SCHEMA,
+            "projectId": project.id,
+            "reviewRevision": revision,
+            "reviewFile": review_file,
+            "findings": selected,
+        }),
+    )?;
+    let brief = remediation_prompt(project, &revision, &review_file, &input_file, &selected);
+    write_private(&brief_file, brief.as_bytes())?;
+    let objective = format!(
+        "Remediate reviewed security finding(s) {} at {}. Follow the private brief at {} and do not publish.",
+        selected_ids.join(", "),
+        &revision[..12],
+        brief_file.display()
+    );
+    let session = crate::coordination::start_session(paths, project, &task, agent, &objective)?;
+    Ok(RemediationSession {
+        ok: true,
+        project_id: project.id.clone(),
+        review_revision: revision,
+        finding_ids: selected_ids,
+        review_file,
+        brief_file,
+        input_file,
+        session,
+        message: "Created an isolated remediation worktree; publication remains a separate explicit action"
+            .to_owned(),
+    })
+}
+
+pub fn dossier(paths: &AppPaths, project: &Project) -> Result<SecurityDossier> {
+    let current = status(paths, project)?;
+    if !current.ready {
+        bail!("security dossier requires a current exact-commit Ready review");
+    }
+    let (report_file, review) = latest_review(paths, &project.id)?
+        .context("security dossier requires an imported review")?;
+    let plugin = manifest::validate_plugin(&project.plugin_root)?;
+    let report_bytes = read_bounded_regular(&report_file, MAX_REPORT_BYTES)?;
+    let report_sha256 = format!("{:x}", Sha256::digest(&report_bytes));
+    let evidence = crate::coordination::read_evidence(paths, &project.id, 1000)?
+        .into_iter()
+        .filter(|record| {
+            record.revision.as_deref() == Some(review.revision.as_str()) && !record.dirty
+        })
+        .take(100)
+        .collect::<Vec<_>>();
+    let output_dir = paths
+        .security_reviews_dir
+        .join(&project.id)
+        .join("dossiers");
+    secure_dir(&output_dir)?;
+    let basename = format!("{}-security-dossier", &review.revision[..12]);
+    let dossier_file = output_dir.join(format!("{basename}.md"));
+    let json_file = output_dir.join(format!("{basename}.json"));
+    let markdown = dossier_markdown(&plugin, &review, &report_sha256, &evidence);
+    write_private(&dossier_file, markdown.as_bytes())?;
+    write_private_json(
+        &json_file,
+        &serde_json::json!({
+            "schemaVersion": REVIEW_SCHEMA,
+            "plugin": {
+                "id": plugin.id,
+                "name": plugin.name,
+                "version": plugin.version,
+            },
+            "revision": review.revision,
+            "reviewReportSha256": report_sha256,
+            "review": review,
+            "currentRevisionEvidence": evidence,
+        }),
+    )?;
+    Ok(SecurityDossier {
+        ok: true,
+        project_id: project.id.clone(),
+        plugin_id: plugin.id,
+        plugin_name: plugin.name,
+        plugin_version: plugin.version,
+        revision: review.revision,
+        result: review.result.as_str().to_owned(),
+        report_sha256,
+        findings: review.findings.len(),
+        executable_artifacts: review.executable_artifacts.len(),
+        evidence_records: evidence.len(),
+        dossier_file,
+        json_file,
+        message: "Prepared a shareable exact-commit security dossier without publishing it"
+            .to_owned(),
+    })
+}
+
+fn validate_revision(revision: &str) -> Result<()> {
+    if revision.len() != 40 || !revision.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        bail!("security review revision must be a full 40-character Git object id");
+    }
+    Ok(())
+}
+
+fn remediation_slug(finding_id: &str) -> String {
+    let slug = finding_id
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() {
+                character.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>();
+    slug.trim_matches('-').chars().take(24).collect()
+}
+
+fn remediation_prompt(
+    project: &Project,
+    revision: &str,
+    review_file: &Path,
+    input_file: &Path,
+    findings: &[SecurityFinding],
+) -> String {
+    let finding_list = findings
+        .iter()
+        .map(|finding| {
+            format!(
+                "- `{}` [{}] {}:{} — {}\n  - Minimal remediation: {}\n  - Required verification: {}",
+                finding.id,
+                finding.severity,
+                finding.file,
+                finding
+                    .line
+                    .map(|line| line.to_string())
+                    .unwrap_or_else(|| "?".to_owned()),
+                markdown_text(&finding.summary),
+                markdown_text(&finding.remediation),
+                markdown_text(&finding.verification)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!(
+        r#"# Security remediation session
+
+Work only in the isolated worktree created for this session. The source review was bound to exact commit `{revision}` for project `{project_id}`.
+
+- Original review: `{review_file}`
+- Structured selected findings: `{input_file}`
+
+## Findings in scope
+
+{finding_list}
+
+Inspect the complete source-to-sink path before editing. Keep the fix minimal, add regression evidence, and check fresh-install, upgrade, failure, cleanup, and rollback paths where relevant. Do not weaken tests, hide residual exposure, or treat the original explanation as proof.
+
+Run only commands you have independently reviewed and intentionally chosen. Do not publish, push, tag, release, submit marketplace issues, or modify the original source checkout. When the fix is complete, commit it in this session branch, integrate it deliberately, and prepare a new `security-review-prepare {project_id} --verify-fixes` brief at the resulting clean commit.
+"#,
+        project_id = project.id,
+        review_file = review_file.display(),
+        input_file = input_file.display(),
+    )
+}
+
+fn dossier_markdown(
+    plugin: &manifest::ValidatedManifest,
+    review: &SecurityReview,
+    report_sha256: &str,
+    evidence: &[EvidenceRecord],
+) -> String {
+    let findings = if review.findings.is_empty() {
+        "- No unresolved findings were reported.\n".to_owned()
+    } else {
+        review
+            .findings
+            .iter()
+            .map(|finding| {
+                format!(
+                    "- **{} · {}** — `{}`{} — {}",
+                    finding.severity.to_ascii_uppercase(),
+                    markdown_text(&finding.id),
+                    markdown_text(&finding.file),
+                    finding
+                        .line
+                        .map(|line| format!(":{line}"))
+                        .unwrap_or_default(),
+                    markdown_text(&finding.summary)
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+            + "\n"
+    };
+    let artifacts = if review.executable_artifacts.is_empty() {
+        "- No executable artifacts were detected.\n".to_owned()
+    } else {
+        review
+            .executable_artifacts
+            .iter()
+            .map(|artifact| {
+                format!(
+                    "- `{}` — **{}** ({}) — {}",
+                    markdown_text(&artifact.path),
+                    markdown_text(&artifact.status),
+                    markdown_text(&artifact.kind),
+                    markdown_text(&artifact.evidence)
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+            + "\n"
+    };
+    let evidence_lines = if evidence.is_empty() {
+        "- No additional current-revision Workbench evidence was recorded.\n".to_owned()
+    } else {
+        evidence
+            .iter()
+            .map(|record| {
+                format!(
+                    "- `{}` / `{}` — **{}** — {} — {}",
+                    markdown_text(&record.kind),
+                    markdown_text(&record.name),
+                    if record.ok { "passed" } else { "failed" },
+                    markdown_text(&record.platform),
+                    record.recorded_at_unix
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+            + "\n"
+    };
+    format!(
+        r#"# Omarchy plugin security dossier
+
+## Reviewed identity
+
+- Plugin: **{plugin_name}** (`{plugin_id}`)
+- Version: `{version}`
+- Exact commit: `{revision}`
+- Manual review result: **{result}**
+- Reviewer: {reviewer}
+- Reviewed at (Unix): `{reviewed_at}`
+- Review record SHA-256: `{report_sha256}`
+
+## Findings
+
+{findings}
+## Executable provenance
+
+{artifacts}
+## Current-revision Workbench evidence
+
+{evidence_lines}
+## Residual scope
+
+- Remaining blockers: {blockers}
+- Residual risks: {risks}
+- Untested areas: {untested}
+- Commands deliberately not run: {not_run}
+
+This dossier records manual review evidence at one immutable commit. It is not certification, warranty, marketplace approval, or proof that the plugin is safe. Any source change makes the review stale.
+"#,
+        plugin_name = markdown_text(&plugin.name),
+        plugin_id = markdown_text(&plugin.id),
+        version = markdown_text(&plugin.version),
+        revision = review.revision,
+        result = review.result.as_str(),
+        reviewer = markdown_text(&review.reviewer),
+        reviewed_at = review.reviewed_at_unix,
+        blockers = review.remaining_blockers.len(),
+        risks = review.residual_risks.len(),
+        untested = review.untested_areas.len(),
+        not_run = review.commands_not_run.len(),
+    )
+}
+
+fn markdown_text(value: &str) -> String {
+    value
+        .chars()
+        .filter(|character| !character.is_control() || *character == '\n')
+        .map(|character| match character {
+            '\n' | '\r' | '|' | '`' => ' ',
+            other => other,
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn exact_clean_git(project: &Project) -> Result<crate::model::GitState> {
@@ -548,16 +1046,16 @@ fn validate_ready_claim(review: &SecurityReview, current: &ReviewInventory) -> R
     Ok(())
 }
 
-fn latest_review(paths: &AppPaths, project_id: &str) -> Result<Option<(PathBuf, SecurityReview)>> {
+fn load_reviews(paths: &AppPaths, project_id: &str) -> Result<Vec<(PathBuf, SecurityReview)>> {
     let records = paths.security_reviews_dir.join(project_id).join("records");
     if !records.exists() {
-        return Ok(None);
+        return Ok(Vec::new());
     }
     let metadata = fs::symlink_metadata(&records)?;
     if metadata.file_type().is_symlink() || !metadata.is_dir() {
         bail!("security review record boundary is not a normal directory");
     }
-    let mut latest: Option<(PathBuf, SecurityReview)> = None;
+    let mut reviews = Vec::new();
     for entry in fs::read_dir(&records)? {
         let entry = entry?;
         let path = entry.path();
@@ -567,14 +1065,20 @@ fn latest_review(paths: &AppPaths, project_id: &str) -> Result<Option<(PathBuf, 
         let bytes = read_bounded_regular(&path, MAX_REPORT_BYTES)?;
         let review: SecurityReview = serde_json::from_slice(&bytes)
             .with_context(|| format!("parse security review record {}", path.display()))?;
-        if latest
-            .as_ref()
-            .is_none_or(|(_, current)| review.reviewed_at_unix > current.reviewed_at_unix)
-        {
-            latest = Some((path, review));
-        }
+        reviews.push((path, review));
     }
-    Ok(latest)
+    reviews.sort_by(|left, right| {
+        right
+            .1
+            .reviewed_at_unix
+            .cmp(&left.1.reviewed_at_unix)
+            .then_with(|| right.0.cmp(&left.0))
+    });
+    Ok(reviews)
+}
+
+fn latest_review(paths: &AppPaths, project_id: &str) -> Result<Option<(PathBuf, SecurityReview)>> {
+    Ok(load_reviews(paths, project_id)?.into_iter().next())
 }
 
 fn inventory(root: &Path) -> Result<ReviewInventory> {

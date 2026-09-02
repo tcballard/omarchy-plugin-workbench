@@ -8,6 +8,10 @@
 - Record imported reviews in owner-only state, automatically mark them stale when source changes, and expose `ready`, `needs-fixes`, `incomplete`, or derived `stale` status.
 - Require a current `Ready` manual review before release plans or marketplace submission drafts can pass.
 - Add Security status and audit-brief controls to each native project card.
+- Add bounded security-review history and complete exact-revision report inspection.
+- Add isolated remediation sessions generated from all or selected reviewed finding ids.
+- Add private shareable Markdown and JSON security dossiers binding review records, executable provenance, and current-revision evidence.
+- Add native finding, history, remediation-session, and dossier actions.
 
 ## 0.2.0 — 2026-09-01
 

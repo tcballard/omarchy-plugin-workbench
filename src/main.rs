@@ -133,6 +133,28 @@ enum Command {
     },
     /// Show whether the latest manual security review is current or stale.
     SecurityReviewStatus { id: String },
+    /// List bounded imported security-review history for a project.
+    SecurityReviewHistory {
+        id: String,
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
+    },
+    /// Show the complete latest review, or the latest review at one exact revision.
+    SecurityReviewShow {
+        id: String,
+        #[arg(long)]
+        revision: Option<String>,
+    },
+    /// Create an isolated worktree and private brief for reviewed findings.
+    SecurityRemediationStart {
+        id: String,
+        #[arg(long = "finding", help = "Finding id to remediate; omit to include all")]
+        findings: Vec<String>,
+        #[arg(long, help = "Optional agent label stored as local session metadata")]
+        agent: Option<String>,
+    },
+    /// Export a shareable exact-commit security and provenance dossier.
+    SecurityReviewDossier { id: String },
     /// Combine project, environment, session, and evidence diagnostics.
     Diagnose { id: String },
     /// Allow the exact argv checks declared by a project.
@@ -587,6 +609,44 @@ fn run(cli: &Cli) -> Result<()> {
                 &report,
                 &format!("Security review status: {}", report.status),
             )
+        }),
+        Command::SecurityReviewHistory { id, limit } => {
+            with_project(&paths, id, |project| {
+                let report = security::history(&paths, project, *limit)?;
+                let message = format!("{} security review record(s)", report.reviews.len());
+                emit(cli.json, &report, &message)
+            })
+        }
+        Command::SecurityReviewShow { id, revision } => {
+            with_project(&paths, id, |project| {
+                let report = security::show(&paths, project, revision.as_deref())?;
+                emit(
+                    cli.json,
+                    &report,
+                    &format!(
+                        "Security review {} has {} finding(s)",
+                        &report.review.revision[..12],
+                        report.review.findings.len()
+                    ),
+                )
+            })
+        }
+        Command::SecurityRemediationStart {
+            id,
+            findings,
+            agent,
+        } => with_project(&paths, id, |project| {
+            let report = security::start_remediation(
+                &paths,
+                project,
+                findings,
+                agent.as_deref(),
+            )?;
+            emit(cli.json, &report, &report.message)
+        }),
+        Command::SecurityReviewDossier { id } => with_project(&paths, id, |project| {
+            let report = security::dossier(&paths, project)?;
+            emit(cli.json, &report, &report.message)
         }),
         Command::Diagnose { id } => with_project(&paths, id, |project| {
             let enabled = std::collections::HashMap::new();
