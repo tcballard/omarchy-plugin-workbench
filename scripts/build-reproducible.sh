@@ -8,7 +8,7 @@ fi
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 output_dir="$1"
-build_image="${WORKBENCH_BUILD_IMAGE:-rust:1.98.0-bookworm}"
+build_image="${WORKBENCH_BUILD_IMAGE:-rust@sha256:82150a52ec202c1b14d7817e14516c392bb7f5cfebd88f1ed531cb37ebd39922}"
 cargo_cache="${WORKBENCH_CARGO_CACHE:-${TMPDIR:-/tmp}/omarchy-plugin-workbench-cargo}"
 
 case "$output_dir" in

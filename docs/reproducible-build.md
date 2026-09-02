@@ -17,7 +17,7 @@ repository, workflow and exact Git commit in GitHub's transparency log.
 Install Docker, check out the exact commit, then run:
 
 ```bash
-export WORKBENCH_BUILD_IMAGE='IMAGE_WITH_IMMUTABLE_SHA256_DIGEST'
+export WORKBENCH_BUILD_IMAGE='rust@sha256:82150a52ec202c1b14d7817e14516c392bb7f5cfebd88f1ed531cb37ebd39922'
 scripts/build-reproducible.sh /tmp/workbench-build-a
 scripts/build-reproducible.sh /tmp/workbench-build-b
 cmp /tmp/workbench-build-a/release/omarchy-plugin-workbench \
@@ -37,4 +37,3 @@ gh attestation verify bin/omarchy-plugin-workbench-x86_64 \
 ```
 
 The attestation establishes build provenance, not that the program is safe.
-
