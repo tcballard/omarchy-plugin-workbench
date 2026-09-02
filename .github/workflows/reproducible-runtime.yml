@@ -1,0 +1,50 @@
+name: Reproducible runtime
+
+on:
+  pull_request:
+  push:
+    branches: [main, fix/reproducible-release]
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
+env:
+  WORKBENCH_BUILD_IMAGE: rust@sha256:82150a52ec202c1b14d7817e14516c392bb7f5cfebd88f1ed531cb37ebd39922
+
+jobs:
+  verify-runtime:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Resolve build environment
+        run: |
+          docker pull "$WORKBENCH_BUILD_IMAGE"
+          docker image inspect --format '{{index .RepoDigests 0}}' "$WORKBENCH_BUILD_IMAGE" | tee "$RUNNER_TEMP/build-image.txt"
+      - name: Build twice from locked source
+        run: |
+          WORKBENCH_CARGO_CACHE="$RUNNER_TEMP/cargo" scripts/build-reproducible.sh "$RUNNER_TEMP/build-a"
+          WORKBENCH_CARGO_CACHE="$RUNNER_TEMP/cargo" scripts/build-reproducible.sh "$RUNNER_TEMP/build-b"
+      - name: Verify reproducibility
+        run: |
+          cmp "$RUNNER_TEMP/build-a/release/omarchy-plugin-workbench" "$RUNNER_TEMP/build-b/release/omarchy-plugin-workbench"
+          sha256sum "$RUNNER_TEMP/build-a/release/omarchy-plugin-workbench"
+      - name: Compare committed runtime
+        run: |
+          cmp "$RUNNER_TEMP/build-a/release/omarchy-plugin-workbench" bin/omarchy-plugin-workbench-x86_64
+          sha256sum --check bin/SHA256SUMS
+      - name: Upload candidate and build identity
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: reproducible-runtime-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/build-a/release/omarchy-plugin-workbench
+            ${{ runner.temp }}/build-image.txt
+          if-no-files-found: error
+      - name: Attest committed runtime provenance
+        if: github.event_name == 'push'
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a
+        with:
+          subject-path: bin/omarchy-plugin-workbench-x86_64

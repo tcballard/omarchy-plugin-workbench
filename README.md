@@ -40,6 +40,8 @@ This repository is a complete `0.2.0` implementation with automated Rust and lif
 
 Native visual and interaction acceptance on a real Omarchy Quattro desktop remains a release gate. See [docs/live-acceptance.md](docs/live-acceptance.md).
 
+The bundled x86-64 helper is byte-reproducible from a pinned Rust/container environment and receives GitHub build-provenance attestations on trusted `main` and version-tag builds. See [the reproduction procedure](docs/reproducible-build.md) and [the 0.2.0 trust-boundary audit](docs/security-audit-0.2.0.md).
+
 ## What it manages
 
 For each explicitly registered project, Workbench shows:

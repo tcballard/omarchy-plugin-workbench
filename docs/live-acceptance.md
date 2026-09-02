@@ -1,6 +1,6 @@
 # Omarchy Quattro live acceptance
 
-Complete this matrix on an actual official x86-64 Omarchy Quattro desktop before publishing `0.1.0`.
+Complete this matrix on an actual official x86-64 Omarchy Quattro desktop before publishing `0.2.0`.
 
 ## Record the host
 
