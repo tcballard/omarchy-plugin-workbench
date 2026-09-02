@@ -478,11 +478,7 @@ pub fn history(paths: &AppPaths, project: &Project, limit: usize) -> Result<Revi
     })
 }
 
-pub fn show(
-    paths: &AppPaths,
-    project: &Project,
-    revision: Option<&str>,
-) -> Result<ReviewDetails> {
+pub fn show(paths: &AppPaths, project: &Project, revision: Option<&str>) -> Result<ReviewDetails> {
     if let Some(revision) = revision {
         validate_revision(revision)?;
     }
@@ -530,7 +526,10 @@ pub fn start_remediation(
     if finding_ids.len() > 32 {
         bail!("security remediation accepts at most 32 finding ids");
     }
-    let requested = finding_ids.iter().map(String::as_str).collect::<BTreeSet<_>>();
+    let requested = finding_ids
+        .iter()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
     if requested.len() != finding_ids.len() {
         bail!("security remediation finding ids must be unique");
     }
