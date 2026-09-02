@@ -31,10 +31,6 @@ jobs:
         run: |
           cmp "$RUNNER_TEMP/build-a/release/omarchy-plugin-workbench" "$RUNNER_TEMP/build-b/release/omarchy-plugin-workbench"
           sha256sum "$RUNNER_TEMP/build-a/release/omarchy-plugin-workbench"
-      - name: Compare committed runtime
-        run: |
-          cmp "$RUNNER_TEMP/build-a/release/omarchy-plugin-workbench" bin/omarchy-plugin-workbench-x86_64
-          sha256sum --check bin/SHA256SUMS
       - name: Upload candidate and build identity
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
@@ -43,6 +39,10 @@ jobs:
             ${{ runner.temp }}/build-a/release/omarchy-plugin-workbench
             ${{ runner.temp }}/build-image.txt
           if-no-files-found: error
+      - name: Compare committed runtime
+        run: |
+          cmp "$RUNNER_TEMP/build-a/release/omarchy-plugin-workbench" bin/omarchy-plugin-workbench-x86_64
+          sha256sum --check bin/SHA256SUMS
       - name: Attest committed runtime provenance
         if: github.event_name == 'push'
         uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a
