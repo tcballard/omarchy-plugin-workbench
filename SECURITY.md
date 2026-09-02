@@ -31,6 +31,8 @@ Plugin Workbench treats plugin source, project configuration, shell logs, and in
 - Marketplace ownership receipts are owner-only bounded files. Managed updates require the cached next reviewed commit, a clean receipt-matching checkout and fast-forward ancestry; validation failure resets the exact previous commit.
 - Repair and uninstall require confirmation, refuse symlink targets and move normal owned directories into private recovery storage instead of deleting them.
 - Release plans and submission drafts are inert owner-only artifacts. Workbench never executes their commands, creates tags, pushes commits, publishes releases or opens public issues.
+- Security-review preparation binds a bounded static inventory and reviewer prompt to one clean full Git object id. It does not execute repository code, tests, builds, hooks, installers, workflows, privileged commands, downloaded objects, or bundled binaries.
+- Imported manual reviews are bounded, schema checked, project/revision matched, stored owner-only, and derived as stale after any commit or worktree change. `Ready` requires no blockers or unresolved critical/high/medium findings and provenance coverage for every detected executable artifact.
 - The bundled x86-64 helper is an intentional reviewed binary. Its Rust toolchain and container environment are pinned, Cargo input is frozen, and CI requires two clean builds plus the committed executable to be byte-identical before verifying its recorded SHA-256 and version.
 - Trusted `main` and version-tag workflows publish GitHub build-provenance attestations binding the bundled executable digest to the repository, workflow, and exact commit. See `docs/reproducible-build.md`.
 - The 0.2.0 command, workflow, worktree, nested-session, update, marketplace, and binary boundaries are recorded in `docs/security-audit-0.2.0.md`.
@@ -57,7 +59,8 @@ Workbench does not:
 - Delete project checkouts.
 - Delete session worktrees or branches when a session is closed.
 - Clean old snapshots automatically.
-- Claim to security-audit third-party plugin behavior.
+- Claim that its static inventory alone security-audits third-party plugin behavior or replaces complete manual analysis.
+- Describe an imported review as certification, warranty, marketplace approval, or proof of safety.
 
 ## Reporting
 

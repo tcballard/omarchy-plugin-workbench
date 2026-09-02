@@ -23,6 +23,17 @@ jq -e '
   and .["$defs"].check.properties.timeoutSeconds.maximum == 1800
 ' "$repo_root/contracts/project-definition.schema.json" >/dev/null
 
+jq -e '
+  .["$schema"] == "https://json-schema.org/draft/2020-12/schema"
+  and .properties.schemaVersion.const == 1
+  and (.properties.result.enum | index("ready") != null)
+  and (.properties.result.enum | index("needs-fixes") != null)
+  and (.properties.result.enum | index("incomplete") != null)
+  and (.properties.executableArtifacts.items["$ref"] == "#/$defs/artifact")
+  and (.["$defs"].artifact.properties.status.enum | index("attested") != null)
+  and (.["$defs"].fix.properties.result.enum | index("not-fixed") != null)
+' "$repo_root/contracts/security-review.schema.json" >/dev/null
+
 [[ -f $repo_root/BarWidget.qml ]]
 [[ -f $repo_root/Panel.qml ]]
 [[ -x $repo_root/bin/omarchy-plugin-workbench ]]

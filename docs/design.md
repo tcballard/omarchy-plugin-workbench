@@ -16,7 +16,15 @@ Successful installs create a separate ownership receipt. Only a normal directory
 
 ## Publishing boundary
 
-Release planning consumes current release-readiness evidence and emits exact inert argv arrays. Submission preparation mirrors the current official form and gates root layout, documentation, licence, taxonomy, cached collisions and owner checklist confirmation. These artifacts stop at the public-identity boundary: Workbench does not run tag/push/release commands or submit issues.
+Release planning consumes current release-readiness evidence and emits exact inert argv arrays. Submission preparation mirrors the current official form and gates root layout, documentation, licence, taxonomy, cached collisions, owner checklist confirmation, and a current exact-commit `Ready` manual security review. These artifacts stop at the public-identity boundary: Workbench does not run tag/push/release commands or submit issues.
+
+## Security-review boundary
+
+Security review deliberately does not reuse the executable validation path. Preparing a review resolves a clean full Git object id, validates only the static manifest contract, walks the project without following symlinks, identifies executable file signatures and modes, and records bounded textual trust-boundary cues. It never invokes repository commands, code, tests, builds, hooks, installers, workflows, downloaded artifacts, or bundled executables.
+
+The generated owner-only prompt requires a complete manual review and a schema-one final JSON report. Import uses `O_NOFOLLOW`, rejects oversized, linked, special, mismatched-project and mismatched-revision files, validates finding and fix vocabularies, and stores the accepted result under private Workbench state. `Ready` is rejected when blockers or unresolved critical/high/medium findings remain, the inventory was truncated, or any detected executable lacks reviewed-source/signature/attestation/reproducibility evidence.
+
+The latest imported record is compared with both current `HEAD` and worktree cleanliness on every status query. Source movement derives `stale`; it never silently carries approval forward. Fix verification embeds the previous findings only after the source reaches a different exact commit. Workbench records the review as evidence, not certification or marketplace approval.
 
 ## Installed plugin updates
 

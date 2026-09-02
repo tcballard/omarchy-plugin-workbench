@@ -29,6 +29,7 @@ pub fn project_status(
     project: &Project,
     enabled: &HashMap<String, bool>,
 ) -> Result<ProjectStatus> {
+    let security = crate::security::status(paths, project)?;
     let git = git_state(&project.project_root);
     let receipt = load_receipt_for(paths, &project.id)?;
     let installed_target = paths.plugins_dir.join(&project.id);
@@ -75,6 +76,9 @@ pub fn project_status(
         project_checks_trusted: project.project_checks_trusted,
         definition_changed_since_trust: project.project_checks_trusted
             && !crate::registry::definition_is_trusted(project)?,
+        security_review_status: security.status,
+        security_review_revision: security.reviewed_revision,
+        security_review_findings: security.findings,
     })
 }
 
@@ -267,6 +271,7 @@ pub fn release_readiness(paths: &AppPaths, project: &Project) -> Result<ReleaseR
     );
     let tag_exists = tag_result.ok && tag_result.output.lines().any(|line| line == tag);
     let passing = crate::coordination::has_passing_checks(paths, project, git.revision.as_deref())?;
+    let security = crate::security::status(paths, project)?;
     let active_sessions = crate::coordination::active_session_count(paths, &project.id)?;
     let active_test_sessions = crate::test_session::active_count(paths, &project.id)?;
     let mut blockers = Vec::new();
@@ -282,6 +287,14 @@ pub fn release_readiness(paths: &AppPaths, project: &Project) -> Result<ReleaseR
     if !passing {
         blockers.push("no clean passing check evidence exists for the current revision".to_owned());
     }
+    if !security.ready {
+        blockers.push(match security.status.as_str() {
+            "stale" => "manual security review is stale for the current source".to_owned(),
+            "needs-fixes" => "manual security review still has blocking findings".to_owned(),
+            "incomplete" => "manual security review is incomplete".to_owned(),
+            _ => "no current Ready manual security review exists".to_owned(),
+        });
+    }
     if active_sessions > 0 {
         blockers.push("one or more work sessions are still active".to_owned());
     }
@@ -296,6 +309,8 @@ pub fn release_readiness(paths: &AppPaths, project: &Project) -> Result<ReleaseR
         clean: !git.dirty,
         changelog_mentions_version,
         current_revision_has_passing_checks: passing,
+        current_revision_has_ready_security_review: security.ready,
+        security_review_status: security.status,
         tag_exists,
         active_sessions,
         active_test_sessions,

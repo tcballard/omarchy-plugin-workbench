@@ -68,6 +68,8 @@ pub struct SubmissionDraft {
     pub draft_file: PathBuf,
     pub body: String,
     pub blockers: Vec<String>,
+    pub security_review_status: String,
+    pub security_review_revision: Option<String>,
 }
 
 pub fn release_plan(paths: &AppPaths, project: &Project) -> Result<ReleasePlan> {
@@ -170,6 +172,7 @@ pub fn submission_draft(
     }
     let manifest = manifest::validate_plugin(&project.plugin_root)?;
     let mut blockers = Vec::new();
+    let security = crate::security::status(paths, project)?;
     if project.plugin_root != project.project_root {
         blockers.push(
             "marketplace submissions require manifest.json in the repository root".to_owned(),
@@ -186,6 +189,14 @@ pub fn submission_draft(
     }
     if !checklist_confirmed {
         blockers.push("submission checklist has not been explicitly confirmed".to_owned());
+    }
+    if !security.ready {
+        blockers.push(match security.status.as_str() {
+            "stale" => "manual security review is stale for the current source".to_owned(),
+            "needs-fixes" => "manual security review still has blocking findings".to_owned(),
+            "incomplete" => "manual security review is incomplete".to_owned(),
+            _ => "no current Ready manual security review exists".to_owned(),
+        });
     }
     let collision = crate::marketplace::submission_collision(paths, &manifest.id, repository)?;
     if let Some(collision) = &collision {
@@ -217,6 +228,8 @@ pub fn submission_draft(
         draft_file,
         body,
         blockers,
+        security_review_status: security.status,
+        security_review_revision: security.reviewed_revision,
     })
 }
 

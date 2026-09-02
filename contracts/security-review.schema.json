@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/tcballard/omarchy-plugin-workbench/contracts/security-review.schema.json",
+  "title": "Omarchy Plugin Workbench security review",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "projectId",
+    "revision",
+    "result",
+    "reviewer",
+    "reviewedAtUnix",
+    "findings",
+    "confirmedFixes",
+    "remainingBlockers",
+    "residualRisks",
+    "untestedAreas",
+    "commandsNotRun",
+    "executableArtifacts"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "projectId": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "revision": { "type": "string", "pattern": "^[0-9a-fA-F]{40,64}$" },
+    "result": { "enum": ["ready", "needs-fixes", "incomplete"] },
+    "reviewer": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "reviewedAtUnix": { "type": "integer", "minimum": 0 },
+    "findings": {
+      "type": "array",
+      "maxItems": 256,
+      "items": { "$ref": "#/$defs/finding" }
+    },
+    "confirmedFixes": {
+      "type": "array",
+      "maxItems": 256,
+      "items": { "$ref": "#/$defs/fix" }
+    },
+    "remainingBlockers": { "$ref": "#/$defs/notes" },
+    "residualRisks": { "$ref": "#/$defs/notes" },
+    "untestedAreas": { "$ref": "#/$defs/notes" },
+    "commandsNotRun": { "$ref": "#/$defs/notes" },
+    "executableArtifacts": {
+      "type": "array",
+      "maxItems": 512,
+      "items": { "$ref": "#/$defs/artifact" }
+    }
+  },
+  "$defs": {
+    "notes": {
+      "type": "array",
+      "maxItems": 256,
+      "items": { "type": "string", "minLength": 1, "maxLength": 8192 }
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "severity",
+        "file",
+        "line",
+        "summary",
+        "untrustedSource",
+        "sensitiveSink",
+        "attackPath",
+        "impact",
+        "remediation",
+        "verification"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "severity": { "enum": ["critical", "high", "medium", "low", "informational"] },
+        "file": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "line": { "type": ["integer", "null"], "minimum": 1 },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 8192 },
+        "untrustedSource": { "type": "string", "minLength": 1, "maxLength": 8192 },
+        "sensitiveSink": { "type": "string", "minLength": 1, "maxLength": 8192 },
+        "attackPath": { "type": "string", "minLength": 1, "maxLength": 8192 },
+        "impact": { "type": "string", "minLength": 1, "maxLength": 8192 },
+        "remediation": { "type": "string", "minLength": 1, "maxLength": 8192 },
+        "verification": { "type": "string", "minLength": 1, "maxLength": 8192 }
+      }
+    },
+    "fix": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["findingId", "result", "evidence"],
+      "properties": {
+        "findingId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "result": { "enum": ["confirmed", "partial", "not-fixed"] },
+        "evidence": { "type": "string", "minLength": 1, "maxLength": 8192 }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "kind", "status", "evidence"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "kind": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "status": {
+          "enum": ["reviewed-source", "reproducible", "attested", "signed", "unverified"]
+        },
+        "evidence": { "type": "string", "minLength": 1, "maxLength": 8192 }
+      }
+    }
+  }
+}

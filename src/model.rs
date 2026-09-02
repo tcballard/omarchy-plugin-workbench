@@ -181,6 +181,9 @@ pub struct ProjectStatus {
     pub active_test_sessions: usize,
     pub project_checks_trusted: bool,
     pub definition_changed_since_trust: bool,
+    pub security_review_status: String,
+    pub security_review_revision: Option<String>,
+    pub security_review_findings: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -300,6 +303,8 @@ pub struct ReleaseReadinessReport {
     pub clean: bool,
     pub changelog_mentions_version: bool,
     pub current_revision_has_passing_checks: bool,
+    pub current_revision_has_ready_security_review: bool,
+    pub security_review_status: String,
     pub tag_exists: bool,
     pub active_sessions: usize,
     pub active_test_sessions: usize,

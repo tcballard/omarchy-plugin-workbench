@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Add exact-commit, strictly read-only security-review briefs based on the Omarchy marketplace maintainer review method.
+- Add bounded static inventories of trust-boundary cues, symlinks, and executable artifacts without running repository code.
+- Add a schema-one structured manual-review contract with traceable findings, residual risks, commands not run, fix verification, and per-artifact provenance.
+- Record imported reviews in owner-only state, automatically mark them stale when source changes, and expose `ready`, `needs-fixes`, `incomplete`, or derived `stale` status.
+- Require a current `Ready` manual review before release plans or marketplace submission drafts can pass.
+- Add Security status and audit-brief controls to each native project card.
+
 ## 0.2.0 — 2026-09-01
 
 - Add a unified portfolio contract for registered projects and Workbench-managed installations.

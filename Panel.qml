@@ -536,6 +536,7 @@ Panel {
               anchors.fill: parent
               anchors.margins: Style.space(8)
               text: root.message
+              textFormat: Text.PlainText
               color: root.messageError ? Color.urgent : root.barForeground
               font.family: root.bar ? root.bar.fontFamily : Style.font.family
               font.pixelSize: Style.font.caption
@@ -731,6 +732,7 @@ Panel {
       id: buttonLabel
       anchors.centerIn: parent
       text: actionButton.label
+      textFormat: Text.PlainText
       color: root.barForeground
       font.family: root.bar ? root.bar.fontFamily : Style.font.family
       font.pixelSize: Style.font.caption
@@ -769,6 +771,7 @@ Panel {
           Text {
             width: parent.width
             text: card.project.name || card.project.id
+            textFormat: Text.PlainText
             color: root.barForeground
             font.family: root.bar ? root.bar.fontFamily : Style.font.family
             font.pixelSize: Style.font.body
@@ -793,7 +796,10 @@ Panel {
             text: card.project.id + "  ·  "
               + (card.project.revision ? String(card.project.revision).slice(0, 10) : "no git revision")
               + (card.project.dirty ? "  ·  DIRTY" : "")
+              + "  ·  SECURITY " + String(card.project.securityReviewStatus || "incomplete").toUpperCase()
+            textFormat: Text.PlainText
             color: card.project.dirty ? Color.urgent
+              : card.project.securityReviewStatus === "ready" ? Color.accent
               : Qt.rgba(root.barForeground.r, root.barForeground.g, root.barForeground.b, 0.58)
             font.family: root.bar ? root.bar.fontFamily : Style.font.family
             font.pixelSize: Style.font.caption
@@ -811,7 +817,8 @@ Panel {
         }
       }
 
-      Row {
+      Flow {
+        width: parent.width
         spacing: Style.space(5)
         WorkbenchButton { label: "Validate"; onTriggered: root.runAction("validate", card.project.id) }
         WorkbenchButton {
@@ -829,6 +836,14 @@ Panel {
             card.project.id)
         }
         WorkbenchButton { label: "Diagnose"; onTriggered: root.runAction("diagnose", card.project.id) }
+        WorkbenchButton {
+          label: card.project.securityReviewStatus === "stale" ? "Refresh audit brief" : "Security brief"
+          onTriggered: root.runAction("security-review-prepare", card.project.id)
+        }
+        WorkbenchButton {
+          label: "Security status"
+          onTriggered: root.runAction("security-review-status", card.project.id)
+        }
         WorkbenchButton { label: "Release check"; onTriggered: root.runAction("release-check", card.project.id) }
         WorkbenchButton { label: "Live link"; onTriggered: root.runAction("link", card.project.id) }
         WorkbenchButton { label: "Snapshot"; onTriggered: root.runAction("snapshot", card.project.id) }
