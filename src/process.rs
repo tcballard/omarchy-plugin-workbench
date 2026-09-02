@@ -70,7 +70,7 @@ pub fn capture_tool(command: &str, args: &[&str], cwd: Option<&Path>) -> ToolRes
 }
 
 pub fn capture_project_tool(command: &str, args: &[&str], cwd: Option<&Path>) -> ToolResult {
-    let Some(executable) = project_tool_path(command) else {
+    let Some(executable) = project_tool_path(command, cwd) else {
         return unavailable_tool();
     };
     tool_result(run_command(
@@ -85,7 +85,7 @@ pub fn capture_project_tool(command: &str, args: &[&str], cwd: Option<&Path>) ->
 pub fn run_check(check: &CheckSpec, cwd: &Path, _temporary_dir: &Path) -> Result<CheckResult> {
     let executable = check.argv.first().context("empty check argv")?;
     reject_privilege_escalation(executable)?;
-    let executable = project_tool_path(executable)
+    let executable = project_tool_path(executable, Some(cwd))
         .with_context(|| format!("project check executable is unavailable: {executable}"))?;
     run_check_with(check, cwd, &executable, EnvironmentPolicy::Inherited)
 }
@@ -424,13 +424,28 @@ pub fn resolve_trusted_tool(name: &str) -> Option<PathBuf> {
         .find_map(|path| executable_file(&path))
 }
 
-fn project_tool_path(name: &str) -> Option<PathBuf> {
+fn project_tool_path(name: &str, cwd: Option<&Path>) -> Option<PathBuf> {
     if name.contains('/') {
-        return executable_file(Path::new(name));
+        let path = Path::new(name);
+        let path = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            cwd?.join(path)
+        };
+        return executable_file(&path);
     }
     let path = std::env::var_os("PATH")?;
     std::env::split_paths(&path)
-        .map(|directory| directory.join(name))
+        .map(|directory| {
+            if directory.is_absolute() {
+                directory.join(name)
+            } else {
+                cwd.map_or_else(
+                    || directory.join(name),
+                    |cwd| cwd.join(directory).join(name),
+                )
+            }
+        })
         .find_map(|path| executable_file(&path))
 }
 
