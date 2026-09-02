@@ -10,7 +10,9 @@ use std::io::Write;
 use std::os::unix::fs::{OpenOptionsExt, symlink};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Stdio};
+#[cfg(test)]
+use std::process::Command;
 use std::thread;
 use std::time::{Duration, Instant};
 

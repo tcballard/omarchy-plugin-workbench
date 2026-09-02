@@ -398,10 +398,10 @@ pub fn resolve_trusted_tool(name: &str) -> Option<PathBuf> {
         return None;
     }
     #[cfg(debug_assertions)]
-    if let Some(root) = std::env::var_os("OMARCHY_WORKBENCH_TEST_TOOLS") {
-        if let Some(path) = executable_file(&PathBuf::from(root).join(name)) {
-            return Some(path);
-        }
+    if let Some(root) = std::env::var_os("OMARCHY_WORKBENCH_TEST_TOOLS")
+        && let Some(path) = executable_file(&PathBuf::from(root).join(name))
+    {
+        return Some(path);
     }
     let mut candidates = vec![
         PathBuf::from("/usr/local/bin").join(name),
