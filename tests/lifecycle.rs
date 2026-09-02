@@ -365,8 +365,14 @@ fn trusted_tools_ignore_path_and_dangerous_git_environment() {
         .env("XDG_CONFIG_HOME", harness.home.join(".config"))
         .env("XDG_STATE_HOME", harness.home.join(".local/state"))
         .env("PATH", &tools)
-        .env("GIT_DIR", harness.root.path().join("attacker-controlled-git-dir"))
-        .env("GIT_CONFIG_SYSTEM", harness.root.path().join("attacker.gitconfig"))
+        .env(
+            "GIT_DIR",
+            harness.root.path().join("attacker-controlled-git-dir"),
+        )
+        .env(
+            "GIT_CONFIG_SYSTEM",
+            harness.root.path().join("attacker.gitconfig"),
+        )
         .env("OMARCHY_WORKBENCH_TEST_TOOLS", &tools)
         .output()
         .unwrap();
