@@ -632,7 +632,7 @@ fn inventory(root: &Path) -> Result<ReviewInventory> {
         }
         let bytes = read_bounded_regular(entry.path(), MAX_TEXT_FILE_BYTES)?;
         report.bytes_scanned += bytes.len() as u64;
-        if bytes.iter().any(|byte| *byte == 0) {
+        if bytes.contains(&0) {
             continue;
         }
         let text = String::from_utf8_lossy(&bytes);
