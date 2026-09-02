@@ -120,7 +120,10 @@ fn run_check_with(
     let (stdout, stdout_truncated) = bounded_text(&outcome.stdout);
     let (mut stderr, stderr_truncated) = bounded_text(&outcome.stderr);
     if outcome.output_limited {
-        append_notice(&mut stderr, "output limit exceeded; process group terminated");
+        append_notice(
+            &mut stderr,
+            "output limit exceeded; process group terminated",
+        );
     }
     if outcome.timed_out {
         append_notice(&mut stderr, "deadline exceeded; process group terminated");
@@ -240,22 +243,24 @@ fn spawn_pipe_reader<R: Read + Send + 'static>(
     stream: Stream,
     sender: SyncSender<PipeEvent>,
 ) {
-    thread::spawn(move || loop {
-        let mut buffer = vec![0_u8; PIPE_CHUNK];
-        match reader.read(&mut buffer) {
-            Ok(0) => {
-                let _ = sender.send(PipeEvent::Eof(stream));
-                break;
-            }
-            Ok(read) => {
-                buffer.truncate(read);
-                if sender.send(PipeEvent::Data(stream, buffer)).is_err() {
+    thread::spawn(move || {
+        loop {
+            let mut buffer = vec![0_u8; PIPE_CHUNK];
+            match reader.read(&mut buffer) {
+                Ok(0) => {
+                    let _ = sender.send(PipeEvent::Eof(stream));
                     break;
                 }
-            }
-            Err(error) => {
-                let _ = sender.send(PipeEvent::Error(stream, error.to_string()));
-                break;
+                Ok(read) => {
+                    buffer.truncate(read);
+                    if sender.send(PipeEvent::Data(stream, buffer)).is_err() {
+                        break;
+                    }
+                }
+                Err(error) => {
+                    let _ = sender.send(PipeEvent::Error(stream, error.to_string()));
+                    break;
+                }
             }
         }
     });
@@ -359,7 +364,10 @@ fn apply_trusted_environment(command: &mut Command) {
     let xdg_config = std::env::var_os("XDG_CONFIG_HOME");
     let xdg_state = std::env::var_os("XDG_STATE_HOME");
     let xdg_cache = std::env::var_os("XDG_CACHE_HOME");
-    command.env_clear().env("PATH", FIXED_PATH).env("LANG", "C.UTF-8");
+    command
+        .env_clear()
+        .env("PATH", FIXED_PATH)
+        .env("LANG", "C.UTF-8");
     for (name, value) in [
         ("HOME", home),
         ("XDG_CONFIG_HOME", xdg_config),
@@ -402,11 +410,18 @@ pub fn resolve_trusted_tool(name: &str) -> Option<PathBuf> {
     ];
     if matches!(name, "omarchy" | "omarchy-shell") {
         if let Some(home) = std::env::var_os("HOME") {
-            candidates.insert(0, PathBuf::from(home).join(".local/share/omarchy/bin").join(name));
+            candidates.insert(
+                0,
+                PathBuf::from(home)
+                    .join(".local/share/omarchy/bin")
+                    .join(name),
+            );
         }
         candidates.insert(0, PathBuf::from("/usr/share/omarchy/bin").join(name));
     }
-    candidates.into_iter().find_map(|path| executable_file(&path))
+    candidates
+        .into_iter()
+        .find_map(|path| executable_file(&path))
 }
 
 fn project_tool_path(name: &str) -> Option<PathBuf> {
@@ -452,7 +467,10 @@ fn tool_result(result: Result<CommandOutcome>) -> ToolResult {
             combined.extend_from_slice(&outcome.stderr);
             let (mut output, _) = bounded_text(&combined);
             if outcome.output_limited {
-                append_notice(&mut output, "output limit exceeded; process group terminated");
+                append_notice(
+                    &mut output,
+                    "output limit exceeded; process group terminated",
+                );
             }
             if outcome.timed_out {
                 append_notice(&mut output, "deadline exceeded; process group terminated");
@@ -490,7 +508,11 @@ fn append_notice_bytes(output: &mut Vec<u8>, notice: &str) {
 
 fn bounded_text(bytes: &[u8]) -> (String, bool) {
     let truncated = bytes.len() > OUTPUT_LIMIT;
-    let slice = if truncated { &bytes[..OUTPUT_LIMIT] } else { bytes };
+    let slice = if truncated {
+        &bytes[..OUTPUT_LIMIT]
+    } else {
+        bytes
+    };
     (String::from_utf8_lossy(slice).into_owned(), truncated)
 }
 
