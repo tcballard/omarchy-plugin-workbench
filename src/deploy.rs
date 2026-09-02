@@ -12,7 +12,6 @@ use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt, symlink};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use walkdir::{DirEntry, WalkDir};
 
 pub fn validate(project: &Project) -> Result<ValidationReport> {
@@ -48,24 +47,24 @@ pub fn git_state(project_root: &Path) -> GitState {
             dirty: false,
         };
     }
-    let revision = Command::new("git")
-        .args(["-C", &project_root.to_string_lossy(), "rev-parse", "HEAD"])
-        .output()
-        .ok()
-        .filter(|output| output.status.success())
-        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned())
+    let root = project_root.to_string_lossy();
+    let revision = capture_tool("git", &["-C", &root, "rev-parse", "HEAD"], None);
+    let revision = revision
+        .ok
+        .then(|| revision.output.trim().to_owned())
         .filter(|value| !value.is_empty());
-    let dirty = Command::new("git")
-        .args([
+    let status = capture_tool(
+        "git",
+        &[
             "-C",
-            &project_root.to_string_lossy(),
+            &root,
             "status",
             "--porcelain=v1",
             "--untracked-files=normal",
-        ])
-        .output()
-        .ok()
-        .is_some_and(|output| output.status.success() && !output.stdout.is_empty());
+        ],
+        None,
+    );
+    let dirty = status.ok && !status.output.is_empty();
     GitState { revision, dirty }
 }
 

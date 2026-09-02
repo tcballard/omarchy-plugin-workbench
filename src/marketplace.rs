@@ -1,7 +1,7 @@
 use crate::manifest;
 use crate::model::{CheckResult, CheckSpec};
 use crate::paths::{AppPaths, secure_dir};
-use crate::process::{command_exists, run_check};
+use crate::process::{command_exists, run_trusted_check};
 use crate::registry::{RegistryLock, now_unix};
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
@@ -214,7 +214,7 @@ pub fn refresh(paths: &AppPaths) -> Result<RefreshReport> {
     drop(temporary_file);
 
     let output_path = temporary.to_string_lossy().into_owned();
-    let download = run_check(
+    let download = run_trusted_check(
         &CheckSpec {
             name: "marketplace-refresh".to_owned(),
             argv: vec![
@@ -1237,7 +1237,7 @@ fn run_git(paths: &AppPaths, cwd: &Path, args: &[&str]) -> Result<CheckResult> {
         "protocol.ext.allow=never".to_owned(),
     ];
     argv.extend(args.iter().map(|argument| (*argument).to_owned()));
-    run_check(
+    run_trusted_check(
         &CheckSpec {
             name: "marketplace-install-git".to_owned(),
             argv,
@@ -1315,7 +1315,7 @@ fn run_tool(
     argv: Vec<String>,
     timeout_seconds: u64,
 ) -> Result<CheckResult> {
-    run_check(
+    run_trusted_check(
         &CheckSpec {
             name: name.to_owned(),
             argv,
