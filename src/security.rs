@@ -221,7 +221,13 @@ pub fn prepare(paths: &AppPaths, project: &Project, verify_fixes: bool) -> Resul
         previous_review: previous.as_ref().map(|(_, review)| review),
     };
     write_private_json(&input_file, &input)?;
-    let prompt = review_prompt(project, &plugin.id, &revision, &input_file, previous.as_ref());
+    let prompt = review_prompt(
+        project,
+        &plugin.id,
+        &revision,
+        &input_file,
+        previous.as_ref(),
+    );
     write_private(&prompt_file, prompt.as_bytes())?;
     Ok(ReviewBrief {
         ok: true,
@@ -367,13 +373,19 @@ fn exact_clean_git(project: &Project) -> Result<crate::model::GitState> {
 
 fn validate_review(project: &Project, revision: &str, review: &SecurityReview) -> Result<()> {
     if review.schema_version != REVIEW_SCHEMA {
-        bail!("unsupported security review schema {}", review.schema_version);
+        bail!(
+            "unsupported security review schema {}",
+            review.schema_version
+        );
     }
     if review.project_id != project.id {
         bail!("security review project id does not match '{}'", project.id);
     }
     if review.revision != revision {
-        bail!("security review is bound to {}, not current commit {revision}", review.revision);
+        bail!(
+            "security review is bound to {}, not current commit {revision}",
+            review.revision
+        );
     }
     bounded(&review.reviewer, "reviewer", 1, 256)?;
     validate_notes(&review.remaining_blockers, "remaining blocker")?;
@@ -431,8 +443,14 @@ fn validate_review(project: &Project, revision: &str, review: &SecurityReview) -
             bail!("duplicate executable artifact path '{}'", artifact.path);
         }
         bounded(&artifact.kind, "executable artifact kind", 1, 128)?;
-        if !["reviewed-source", "reproducible", "attested", "signed", "unverified"]
-            .contains(&artifact.status.as_str())
+        if ![
+            "reviewed-source",
+            "reproducible",
+            "attested",
+            "signed",
+            "unverified",
+        ]
+        .contains(&artifact.status.as_str())
         {
             bail!("unsupported provenance status '{}'", artifact.status);
         }
@@ -502,10 +520,7 @@ fn validate_ready_claim(review: &SecurityReview, current: &ReviewInventory) -> R
         .collect::<BTreeMap<_, _>>();
     for artifact in &current.executable_artifacts {
         let item = reported.get(artifact.path.as_str()).with_context(|| {
-            format!(
-                "Ready review omits executable artifact '{}'",
-                artifact.path
-            )
+            format!("Ready review omits executable artifact '{}'", artifact.path)
         })?;
         if item.status == "unverified" {
             bail!(
@@ -623,7 +638,9 @@ fn inventory(root: &Path) -> Result<ReviewInventory> {
         let text = String::from_utf8_lossy(&bytes);
         scan_cues(&relative_text, &text, &mut report.cues);
     }
-    report.executable_artifacts.sort_by(|a, b| a.path.cmp(&b.path));
+    report
+        .executable_artifacts
+        .sort_by(|a, b| a.path.cmp(&b.path));
     report.symlinks.sort();
     Ok(report)
 }
@@ -693,12 +710,53 @@ fn scan_cues(path: &str, text: &str, cues: &mut Vec<ReviewCue>) {
                 "symlink",
             ],
         ),
-        ("network", &["https://", "http://", "curl ", "wget ", "fetch(", "TcpStream", "WebSocket"]),
-        ("privilege", &["sudo", "pkexec", "polkit", "systemctl", "pacman"]),
-        ("ipc", &["D-Bus", "dbus", "hyprctl", "Quickshell.Io", "socket", "IPC"]),
-        ("secrets", &["token", "password", "credential", "cookie", "clipboard", "secret"]),
-        ("agent", &[".codex", ".claude", ".agents", ".gemini", "MCP", "prompt", "hook"]),
-        ("qml", &["Qt.openUrlExternally", "StdioCollector", "textFormat", "Image {", "source:"]),
+        (
+            "network",
+            &[
+                "https://",
+                "http://",
+                "curl ",
+                "wget ",
+                "fetch(",
+                "TcpStream",
+                "WebSocket",
+            ],
+        ),
+        (
+            "privilege",
+            &["sudo", "pkexec", "polkit", "systemctl", "pacman"],
+        ),
+        (
+            "ipc",
+            &["D-Bus", "dbus", "hyprctl", "Quickshell.Io", "socket", "IPC"],
+        ),
+        (
+            "secrets",
+            &[
+                "token",
+                "password",
+                "credential",
+                "cookie",
+                "clipboard",
+                "secret",
+            ],
+        ),
+        (
+            "agent",
+            &[
+                ".codex", ".claude", ".agents", ".gemini", "MCP", "prompt", "hook",
+            ],
+        ),
+        (
+            "qml",
+            &[
+                "Qt.openUrlExternally",
+                "StdioCollector",
+                "textFormat",
+                "Image {",
+                "source:",
+            ],
+        ),
         (
             "supply-chain",
             &[
@@ -822,7 +880,11 @@ fn read_bounded_regular(path: &Path, maximum: u64) -> Result<Vec<u8>> {
     let mut bytes = Vec::with_capacity(metadata.len() as usize);
     file.take(maximum + 1).read_to_end(&mut bytes)?;
     if bytes.len() as u64 > maximum {
-        bail!("file grew beyond {} byte boundary: {}", maximum, path.display());
+        bail!(
+            "file grew beyond {} byte boundary: {}",
+            maximum,
+            path.display()
+        );
     }
     Ok(bytes)
 }

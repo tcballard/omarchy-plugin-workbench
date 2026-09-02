@@ -625,11 +625,13 @@ fn release_readiness_requires_current_clean_check_evidence() {
             .unwrap()
             .contains("passing check evidence")
     );
-    assert!(blocked["blockers"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|item| item.as_str().unwrap().contains("security review")));
+    assert!(
+        blocked["blockers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item.as_str().unwrap().contains("security review"))
+    );
 
     harness.json(&["check", "io.test.workbench-demo", "--json"]);
     harness.import_ready_security_review();
@@ -1164,11 +1166,7 @@ fn security_review_is_read_only_exact_commit_bound_and_stales_on_change() {
 
     let imported = harness.import_ready_security_review();
     assert_eq!(imported["status"], "ready");
-    let current = harness.json(&[
-        "security-review-status",
-        "io.test.workbench-demo",
-        "--json",
-    ]);
+    let current = harness.json(&["security-review-status", "io.test.workbench-demo", "--json"]);
     assert_eq!(current["status"], "ready");
 
     fs::write(
@@ -1176,11 +1174,7 @@ fn security_review_is_read_only_exact_commit_bound_and_stales_on_change() {
         "import QtQuick\nItem { objectName: \"changed\" }\n",
     )
     .unwrap();
-    let stale = harness.json(&[
-        "security-review-status",
-        "io.test.workbench-demo",
-        "--json",
-    ]);
+    let stale = harness.json(&["security-review-status", "io.test.workbench-demo", "--json"]);
     assert_eq!(stale["status"], "stale");
     assert_eq!(stale["ready"], false);
 }
@@ -1227,7 +1221,12 @@ fn ready_security_review_requires_provenance_for_every_executable() {
     ]);
     assert!(!rejected.status.success());
     let error: Value = serde_json::from_slice(&rejected.stdout).unwrap();
-    assert!(error["error"].as_str().unwrap().contains("omits executable artifact 'helper'"));
+    assert!(
+        error["error"]
+            .as_str()
+            .unwrap()
+            .contains("omits executable artifact 'helper'")
+    );
 
     let accepted = harness.import_security_review(
         "ready",

@@ -117,7 +117,10 @@ enum Command {
     /// Prepare a strictly read-only security-review brief at the exact current commit.
     SecurityReviewPrepare {
         id: String,
-        #[arg(long, help = "Include the latest review and require fix-by-fix verification")]
+        #[arg(
+            long,
+            help = "Include the latest review and require fix-by-fix verification"
+        )]
         verify_fixes: bool,
     },
     /// Import a completed manual security review into private Workbench state.
@@ -570,12 +573,7 @@ fn run(cli: &Cli) -> Result<()> {
             file,
             confirm_manual_review,
         } => with_project(&paths, id, |project| {
-            let report = security::import_review(
-                &paths,
-                project,
-                file,
-                *confirm_manual_review,
-            )?;
+            let report = security::import_review(&paths, project, file, *confirm_manual_review)?;
             emit(
                 cli.json,
                 &report,
