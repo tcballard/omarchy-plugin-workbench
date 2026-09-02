@@ -7,6 +7,7 @@ mod paths;
 mod process;
 mod publishing;
 mod registry;
+mod security;
 mod test_session;
 mod updates;
 mod workbench;
@@ -113,6 +114,22 @@ enum Command {
     },
     /// Evaluate release readiness without tagging, publishing, or mutating Git.
     ReleaseCheck { id: String },
+    /// Prepare a strictly read-only security-review brief at the exact current commit.
+    SecurityReviewPrepare {
+        id: String,
+        #[arg(long, help = "Include the latest review and require fix-by-fix verification")]
+        verify_fixes: bool,
+    },
+    /// Import a completed manual security review into private Workbench state.
+    SecurityReviewImport {
+        id: String,
+        #[arg(long)]
+        file: PathBuf,
+        #[arg(long, help = "Confirm the report came from a complete manual review")]
+        confirm_manual_review: bool,
+    },
+    /// Show whether the latest manual security review is current or stale.
+    SecurityReviewStatus { id: String },
     /// Combine project, environment, session, and evidence diagnostics.
     Diagnose { id: String },
     /// Allow the exact argv checks declared by a project.
@@ -534,6 +551,44 @@ fn run(cli: &Cli) -> Result<()> {
             } else {
                 Err(ReportedFailure.into())
             }
+        }),
+        Command::SecurityReviewPrepare { id, verify_fixes } => {
+            with_project(&paths, id, |project| {
+                let report = security::prepare(&paths, project, *verify_fixes)?;
+                emit(
+                    cli.json,
+                    &report,
+                    &format!(
+                        "Read-only security review brief prepared at {}",
+                        report.prompt_file.display()
+                    ),
+                )
+            })
+        }
+        Command::SecurityReviewImport {
+            id,
+            file,
+            confirm_manual_review,
+        } => with_project(&paths, id, |project| {
+            let report = security::import_review(
+                &paths,
+                project,
+                file,
+                *confirm_manual_review,
+            )?;
+            emit(
+                cli.json,
+                &report,
+                &format!("Security review recorded as {}", report.status),
+            )
+        }),
+        Command::SecurityReviewStatus { id } => with_project(&paths, id, |project| {
+            let report = security::status(&paths, project)?;
+            emit(
+                cli.json,
+                &report,
+                &format!("Security review status: {}", report.status),
+            )
         }),
         Command::Diagnose { id } => with_project(&paths, id, |project| {
             let enabled = std::collections::HashMap::new();

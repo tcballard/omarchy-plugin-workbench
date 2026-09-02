@@ -56,7 +56,7 @@ For each explicitly registered project, Workbench shows:
 - Whether the project definition changed after it was trusted.
 - Drift when the managed link changes outside Workbench.
 
-Available actions include Validate, Test, Test window, capability workflows, environment diagnostics, isolated sessions, handoffs, evidence, release readiness, Live link, Snapshot, Rollback, Enable, Disable, Undeploy, reviewed installed-plugin updates, Logs, and Doctor.
+Available actions include Validate, Security review, Test, Test window, capability workflows, environment diagnostics, isolated sessions, handoffs, evidence, release readiness, Live link, Snapshot, Rollback, Enable, Disable, Undeploy, reviewed installed-plugin updates, Logs, and Doctor.
 
 ## Search and install official marketplace listings
 
@@ -253,6 +253,34 @@ bin/omarchy-plugin-workbench diagnose io.github.example.plugin
 bin/omarchy-plugin-workbench evidence io.github.example.plugin --limit 20
 bin/omarchy-plugin-workbench release-check io.github.example.plugin
 ```
+
+## Exact-commit security review
+
+Security review is a separate lifecycle stage from executable validation and testing. Workbench prepares a private brief and bounded static inventory at one clean, exact Git commit without running plugin code, tests, builds, examples, installers, hooks, workflows, privileged commands, or bundled binaries:
+
+```bash
+bin/omarchy-plugin-workbench security-review-prepare io.github.example.plugin
+```
+
+The generated brief applies the Omarchy marketplace maintainer method across process execution, filesystem boundaries, network and external content, QML sinks, IPC and privileges, secrets, agent/tool configuration, dependencies, workflows, releases, updates, and executable provenance. Its inventory is navigation evidence, not a clean scan or safety conclusion.
+
+The reviewer returns one schema-one JSON object in their final response. After inspecting it, import it with an explicit manual-review confirmation:
+
+```bash
+bin/omarchy-plugin-workbench security-review-import io.github.example.plugin \
+  --file /path/to/review.json --confirm-manual-review
+bin/omarchy-plugin-workbench security-review-status io.github.example.plugin
+```
+
+Workbench accepts `ready`, `needs-fixes`, or `incomplete` and derives `stale` whenever the worktree becomes dirty or moves away from the reviewed commit. A `Ready` report cannot retain blockers or unresolved critical/high/medium findings, and it must account for every detected executable artifact with reviewable source or provenance evidence. The report contract is published at [`contracts/security-review.schema.json`](contracts/security-review.schema.json).
+
+After remediation, prepare a fix-verification brief against the latest imported findings and the new exact commit:
+
+```bash
+bin/omarchy-plugin-workbench security-review-prepare io.github.example.plugin --verify-fixes
+```
+
+Release and marketplace submission preparation require a current `Ready` manual review. Workbench records the result as evidence but does not describe it as certification, warranty, marketplace approval, or a replacement for maintainer review.
 
 ## Release and marketplace submission preparation
 

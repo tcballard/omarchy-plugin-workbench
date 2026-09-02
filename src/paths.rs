@@ -23,6 +23,7 @@ pub struct AppPaths {
     pub marketplace_receipts_dir: PathBuf,
     pub marketplace_trash_dir: PathBuf,
     pub publishing_dir: PathBuf,
+    pub security_reviews_dir: PathBuf,
     pub lock_file: PathBuf,
 }
 
@@ -60,6 +61,7 @@ impl AppPaths {
             marketplace_receipts_dir: marketplace_dir.join("receipts"),
             marketplace_trash_dir: marketplace_dir.join("trash"),
             publishing_dir: state_dir.join("publishing"),
+            security_reviews_dir: state_dir.join("security-reviews"),
             marketplace_dir,
             sessions_dir,
             config_dir,
@@ -81,6 +83,7 @@ impl AppPaths {
             &self.marketplace_receipts_dir,
             &self.marketplace_trash_dir,
             &self.publishing_dir,
+            &self.security_reviews_dir,
         ] {
             secure_dir(dir)?;
         }

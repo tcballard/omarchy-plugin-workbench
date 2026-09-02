@@ -103,6 +103,57 @@ impl Harness {
         run(&["add", "."]);
         run(&["commit", "-m", "initial"]);
     }
+
+    fn import_security_review(
+        &self,
+        result: &str,
+        findings: Value,
+        blockers: Value,
+        artifacts: Value,
+    ) -> Value {
+        let revision = git(&self.project, &["rev-parse", "HEAD"]);
+        let report = self
+            .root
+            .path()
+            .join(format!("security-review-{revision}-{result}.json"));
+        fs::write(
+            &report,
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "schemaVersion": 1,
+                "projectId": "io.test.workbench-demo",
+                "revision": revision,
+                "result": result,
+                "reviewer": "Workbench integration test",
+                "reviewedAtUnix": 0,
+                "findings": findings,
+                "confirmedFixes": [],
+                "remainingBlockers": blockers,
+                "residualRisks": ["manual review evidence is represented by this fixture"],
+                "untestedAreas": [],
+                "commandsNotRun": ["all repository-provided executable code"],
+                "executableArtifacts": artifacts
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        self.json(&[
+            "security-review-import",
+            "io.test.workbench-demo",
+            "--file",
+            &report.to_string_lossy(),
+            "--confirm-manual-review",
+            "--json",
+        ])
+    }
+
+    fn import_ready_security_review(&self) -> Value {
+        self.import_security_review(
+            "ready",
+            Value::Array(Vec::new()),
+            Value::Array(Vec::new()),
+            Value::Array(Vec::new()),
+        )
+    }
 }
 
 fn git(cwd: &std::path::Path, args: &[&str]) -> String {
@@ -574,12 +625,20 @@ fn release_readiness_requires_current_clean_check_evidence() {
             .unwrap()
             .contains("passing check evidence")
     );
+    assert!(blocked["blockers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item.as_str().unwrap().contains("security review")));
 
     harness.json(&["check", "io.test.workbench-demo", "--json"]);
+    harness.import_ready_security_review();
     let ready = harness.json(&["release-check", "io.test.workbench-demo", "--json"]);
     assert_eq!(ready["ok"], true);
     assert_eq!(ready["version"], "0.1.0");
     assert_eq!(ready["clean"], true);
+    assert_eq!(ready["currentRevisionHasReadySecurityReview"], true);
+    assert_eq!(ready["securityReviewStatus"], "ready");
     assert_eq!(ready["tagExists"], false);
 
     let plan = harness.json(&["release-plan", "io.test.workbench-demo", "--json"]);
@@ -1052,8 +1111,10 @@ fn submission_prepare_emits_the_current_official_form_without_publishing() {
     )
     .unwrap();
     fs::write(harness.project.join("LICENSE"), "MIT").unwrap();
+    harness.initialise_git();
     let project = harness.project.to_string_lossy().into_owned();
     harness.json(&["add", &project, "--json"]);
+    harness.import_ready_security_review();
 
     let draft = harness.json(&[
         "submission-prepare",
@@ -1078,4 +1139,150 @@ fn submission_prepare_emits_the_current_official_form_without_publishing() {
             .contains("### Submission checklist")
     );
     assert!(PathBuf::from(draft["draftFile"].as_str().unwrap()).is_file());
+    assert_eq!(draft["securityReviewStatus"], "ready");
+}
+
+#[test]
+fn security_review_is_read_only_exact_commit_bound_and_stales_on_change() {
+    let harness = Harness::new();
+    harness.initialise_git();
+    let project = harness.project.to_string_lossy().into_owned();
+    harness.json(&["add", &project, "--json"]);
+
+    let prepared = harness.json(&[
+        "security-review-prepare",
+        "io.test.workbench-demo",
+        "--json",
+    ]);
+    let revision = git(&harness.project, &["rev-parse", "HEAD"]);
+    assert_eq!(prepared["revision"], revision);
+    assert_eq!(prepared["inventory"]["truncated"], false);
+    let prompt = fs::read_to_string(prepared["promptFile"].as_str().unwrap()).unwrap();
+    assert!(prompt.contains("Remain read-only"));
+    assert!(prompt.contains("Do not run plugin code, tests, builds"));
+    assert!(prompt.contains(&revision));
+
+    let imported = harness.import_ready_security_review();
+    assert_eq!(imported["status"], "ready");
+    let current = harness.json(&[
+        "security-review-status",
+        "io.test.workbench-demo",
+        "--json",
+    ]);
+    assert_eq!(current["status"], "ready");
+
+    fs::write(
+        harness.project.join("Panel.qml"),
+        "import QtQuick\nItem { objectName: \"changed\" }\n",
+    )
+    .unwrap();
+    let stale = harness.json(&[
+        "security-review-status",
+        "io.test.workbench-demo",
+        "--json",
+    ]);
+    assert_eq!(stale["status"], "stale");
+    assert_eq!(stale["ready"], false);
+}
+
+#[test]
+fn ready_security_review_requires_provenance_for_every_executable() {
+    let harness = Harness::new();
+    let executable = harness.project.join("helper");
+    fs::write(&executable, b"\x7fELFfixture").unwrap();
+    fs::set_permissions(&executable, fs::Permissions::from_mode(0o755)).unwrap();
+    harness.initialise_git();
+    let project = harness.project.to_string_lossy().into_owned();
+    harness.json(&["add", &project, "--json"]);
+
+    let rejected_report = harness.root.path().join("missing-provenance.json");
+    let revision = git(&harness.project, &["rev-parse", "HEAD"]);
+    fs::write(
+        &rejected_report,
+        serde_json::to_vec(&serde_json::json!({
+            "schemaVersion": 1,
+            "projectId": "io.test.workbench-demo",
+            "revision": revision,
+            "result": "ready",
+            "reviewer": "Workbench integration test",
+            "reviewedAtUnix": 0,
+            "findings": [],
+            "confirmedFixes": [],
+            "remainingBlockers": [],
+            "residualRisks": [],
+            "untestedAreas": [],
+            "commandsNotRun": ["all executable code"],
+            "executableArtifacts": []
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    let rejected = harness.run(&[
+        "security-review-import",
+        "io.test.workbench-demo",
+        "--file",
+        &rejected_report.to_string_lossy(),
+        "--confirm-manual-review",
+        "--json",
+    ]);
+    assert!(!rejected.status.success());
+    let error: Value = serde_json::from_slice(&rejected.stdout).unwrap();
+    assert!(error["error"].as_str().unwrap().contains("omits executable artifact 'helper'"));
+
+    let accepted = harness.import_security_review(
+        "ready",
+        Value::Array(Vec::new()),
+        Value::Array(Vec::new()),
+        serde_json::json!([{
+            "path": "helper",
+            "kind": "elf",
+            "status": "attested",
+            "evidence": "attestation fixture bound to the exact reviewed source"
+        }]),
+    );
+    assert_eq!(accepted["status"], "ready");
+}
+
+#[test]
+fn fix_review_brief_requires_prior_findings_and_a_new_commit() {
+    let harness = Harness::new();
+    harness.initialise_git();
+    let project = harness.project.to_string_lossy().into_owned();
+    harness.json(&["add", &project, "--json"]);
+    harness.import_security_review(
+        "needs-fixes",
+        serde_json::json!([{
+            "id": "SEC-001",
+            "severity": "high",
+            "file": "Panel.qml",
+            "line": 2,
+            "summary": "Untrusted content reaches a sensitive sink",
+            "untrustedSource": "remote label",
+            "sensitiveSink": "QML rich text",
+            "attackPath": "remote response to rendered label",
+            "impact": "markup injection",
+            "remediation": "render as plain text",
+            "verification": "inspect every dynamic Text sink"
+        }]),
+        serde_json::json!(["SEC-001 remains open"]),
+        Value::Array(Vec::new()),
+    );
+
+    fs::write(
+        harness.project.join("Panel.qml"),
+        "import QtQuick\nItem { property int textFormat: Text.PlainText }\n",
+    )
+    .unwrap();
+    git(&harness.project, &["add", "Panel.qml"]);
+    git(&harness.project, &["commit", "-m", "fix security finding"]);
+    let prepared = harness.json(&[
+        "security-review-prepare",
+        "io.test.workbench-demo",
+        "--verify-fixes",
+        "--json",
+    ]);
+    assert_eq!(prepared["verifyFixes"], true);
+    let prompt = fs::read_to_string(prepared["promptFile"].as_str().unwrap()).unwrap();
+    assert!(prompt.contains("fix-verification review"));
+    assert!(prompt.contains("confirmed`, `partial`, or `not-fixed"));
 }
