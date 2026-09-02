@@ -42,13 +42,9 @@ jobs:
           printf 'builder-image=%s\nruntime-sha256=%s\nsource-commit=%s\n' \
             "$image" "$(sha256sum "$runtime" | cut -d ' ' -f 1)" "$GITHUB_SHA" \
             > bin/REPRODUCIBLE-RUNTIME
-          sed -i "s|WORKBENCH_BUILD_IMAGE: rust:1.98.0-bookworm|WORKBENCH_BUILD_IMAGE: $image|" \
-            .github/workflows/reproducible-runtime.yml
-          sed -i "s|IMAGE_WITH_IMMUTABLE_SHA256_DIGEST|$image|" docs/reproducible-build.md
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add .github/workflows/reproducible-runtime.yml docs/reproducible-build.md \
-            bin/omarchy-plugin-workbench-x86_64 bin/SHA256SUMS bin/REPRODUCIBLE-RUNTIME
+          git add bin/omarchy-plugin-workbench-x86_64 bin/SHA256SUMS bin/REPRODUCIBLE-RUNTIME
           git commit -m 'build: commit reproducible runtime candidate'
           git push origin HEAD:fix/reproducible-release
       - name: Compare committed runtime
