@@ -7,7 +7,7 @@ on:
     tags: ["v*"]
 
 permissions:
-  contents: read
+  contents: write
   id-token: write
   attestations: write
 
@@ -32,6 +32,25 @@ jobs:
         run: |
           cmp "$RUNNER_TEMP/build-a/release/omarchy-plugin-workbench" "$RUNNER_TEMP/build-b/release/omarchy-plugin-workbench"
           sha256sum "$RUNNER_TEMP/build-a/release/omarchy-plugin-workbench"
+      - name: Commit bootstrap candidate and immutable build identity
+        if: github.event_name == 'push' && github.ref_name == 'fix/reproducible-release' && hashFiles('bin/REPRODUCIBLE-RUNTIME') == ''
+        run: |
+          image="$(cat "$RUNNER_TEMP/build-image.txt")"
+          runtime="$RUNNER_TEMP/build-a/release/omarchy-plugin-workbench"
+          install -m 0755 "$runtime" bin/omarchy-plugin-workbench-x86_64
+          sha256sum bin/omarchy-plugin-workbench-x86_64 > bin/SHA256SUMS
+          printf 'builder-image=%s\nruntime-sha256=%s\nsource-commit=%s\n' \
+            "$image" "$(sha256sum "$runtime" | cut -d ' ' -f 1)" "$GITHUB_SHA" \
+            > bin/REPRODUCIBLE-RUNTIME
+          sed -i "s|WORKBENCH_BUILD_IMAGE: rust:1.98.0-bookworm|WORKBENCH_BUILD_IMAGE: $image|" \
+            .github/workflows/reproducible-runtime.yml
+          sed -i "s|IMAGE_WITH_IMMUTABLE_SHA256_DIGEST|$image|" docs/reproducible-build.md
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .github/workflows/reproducible-runtime.yml docs/reproducible-build.md \
+            bin/omarchy-plugin-workbench-x86_64 bin/SHA256SUMS bin/REPRODUCIBLE-RUNTIME
+          git commit -m 'build: commit reproducible runtime candidate'
+          git push origin HEAD:fix/reproducible-release
       - name: Compare committed runtime
         if: hashFiles('bin/REPRODUCIBLE-RUNTIME') != ''
         run: |
@@ -50,4 +69,3 @@ jobs:
         uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a
         with:
           subject-path: bin/omarchy-plugin-workbench-x86_64
-
