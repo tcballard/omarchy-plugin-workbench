@@ -70,6 +70,7 @@ impl Harness {
             .env("XDG_CONFIG_HOME", self.home.join(".config"))
             .env("XDG_STATE_HOME", self.home.join(".local/state"))
             .env("PATH", path)
+            .env("OMARCHY_WORKBENCH_TEST_TOOLS", tools)
             .env("OMARCHY_TEST_LOG", log)
             .env(
                 "OMARCHY_MARKETPLACE_FIXTURE",
@@ -343,6 +344,38 @@ esac
     )
     .unwrap();
     fs::set_permissions(&git, fs::Permissions::from_mode(0o755)).unwrap();
+}
+
+#[test]
+fn trusted_tools_ignore_path_and_dangerous_git_environment() {
+    let harness = Harness::new();
+    let tools = harness.root.path().join("redirected-tools");
+    fs::create_dir_all(&tools).unwrap();
+    let git = tools.join("git");
+    fs::write(
+        &git,
+        "#!/bin/sh\nprintf 'git-dir=%s path=%s\\n' \"${GIT_DIR-unset}\" \"$PATH\"\n",
+    )
+    .unwrap();
+    fs::set_permissions(&git, fs::Permissions::from_mode(0o755)).unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_omarchy-plugin-workbench"))
+        .args(["doctor", "--json"])
+        .env("HOME", &harness.home)
+        .env("XDG_CONFIG_HOME", harness.home.join(".config"))
+        .env("XDG_STATE_HOME", harness.home.join(".local/state"))
+        .env("PATH", &tools)
+        .env("GIT_DIR", harness.root.path().join("attacker-controlled-git-dir"))
+        .env("GIT_CONFIG_SYSTEM", harness.root.path().join("attacker.gitconfig"))
+        .env("OMARCHY_WORKBENCH_TEST_TOOLS", &tools)
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        report["tools"]["git"]["output"],
+        "git-dir=unset path=/usr/local/bin:/usr/bin:/bin"
+    );
 }
 
 #[test]

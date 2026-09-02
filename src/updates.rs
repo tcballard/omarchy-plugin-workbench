@@ -1,6 +1,6 @@
 use crate::model::{CheckResult, CheckSpec};
 use crate::paths::AppPaths;
-use crate::process::{command_exists, run_check};
+use crate::process::{command_exists, run_trusted_check};
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -457,7 +457,7 @@ fn run_git(paths: &AppPaths, directory: &Path, args: &[&str]) -> Result<CheckRes
         "core.fsmonitor=false".to_owned(),
     ];
     argv.extend(args.iter().map(|argument| (*argument).to_owned()));
-    run_check(
+    run_trusted_check(
         &CheckSpec {
             name: "plugin-update-inspection".to_owned(),
             argv,
@@ -530,7 +530,7 @@ fn validate_updated_plugin(paths: &AppPaths, directory: &Path) -> Result<()> {
         bail!("omarchy is required to validate plugin updates");
     }
     let directory = directory.to_string_lossy().into_owned();
-    let result = run_check(
+    let result = run_trusted_check(
         &CheckSpec {
             name: "validate-plugin-update".to_owned(),
             argv: vec![
@@ -554,7 +554,7 @@ fn rescan_shell(paths: &AppPaths) -> Result<()> {
     if !command_exists("omarchy-shell") {
         bail!("omarchy-shell is required to activate plugin updates");
     }
-    let result = run_check(
+    let result = run_trusted_check(
         &CheckSpec {
             name: "rescan-plugin-updates".to_owned(),
             argv: vec![

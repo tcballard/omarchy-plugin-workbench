@@ -1,7 +1,7 @@
 use crate::manifest::{ValidatedManifest, validate_plugin};
 use crate::model::{Project, TestSessionRecord, TestSessionStatus};
 use crate::paths::{AppPaths, secure_dir};
-use crate::process::command_exists;
+use crate::process::{command_exists, trusted_command};
 use crate::registry::{RegistryLock, now_unix};
 use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
@@ -88,7 +88,7 @@ fn start_prepared(
         .open(&log_path)
         .context("create nested session log")?;
 
-    let mut compositor = Command::new("Hyprland");
+    let mut compositor = trusted_command("Hyprland").context("trusted Hyprland is unavailable")?;
     compositor
         .args(["--config", compositor_config.to_string_lossy().as_ref()])
         .env("HOME", &home)
@@ -115,7 +115,7 @@ fn start_prepared(
         }
     };
 
-    let mut shell = Command::new("quickshell");
+    let mut shell = trusted_command("quickshell").context("trusted quickshell is unavailable")?;
     shell
         .args(["-n", "-p", shell_path.to_string_lossy().as_ref()])
         .current_dir(shell_path)
@@ -427,7 +427,10 @@ fn summon_plugin(
     log_path: &Path,
 ) {
     for _ in 0..20 {
-        let output = Command::new("quickshell")
+        let Some(mut command) = trusted_command("quickshell") else {
+            return;
+        };
+        let output = command
             .args([
                 "ipc",
                 "-p",
@@ -478,7 +481,7 @@ fn wait_for_instance(child: &mut Child, pid: u32) -> Result<(String, String)> {
 
 fn hyprland_instance(pid: u32) -> Option<(String, String)> {
     for args in [["instances", "-j"], ["-j", "instances"]] {
-        let output = Command::new("hyprctl").args(args).output().ok()?;
+        let output = trusted_command("hyprctl")?.args(args).output().ok()?;
         if !output.status.success() {
             continue;
         }

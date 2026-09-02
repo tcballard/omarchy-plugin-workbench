@@ -6,7 +6,7 @@ use crate::model::{
     ReleaseReadinessReport, ToolResult, WorkflowReport,
 };
 use crate::paths::AppPaths;
-use crate::process::{capture_tool, command_exists, run_check};
+use crate::process::{capture_project_tool, capture_tool, command_exists, run_check};
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 use serde_json::Value;
@@ -226,7 +226,7 @@ pub fn inspect_environment(paths: &AppPaths, project: &Project) -> Result<Enviro
                 name: requirement.name.clone(),
                 required: requirement.required,
                 argv: requirement.argv.clone(),
-                result: capture_tool(executable, &args, Some(&project.project_root)),
+                result: capture_project_tool(executable, &args, Some(&project.project_root)),
             }
         })
         .collect::<Vec<_>>();

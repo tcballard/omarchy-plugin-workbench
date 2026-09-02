@@ -1,6 +1,7 @@
 use crate::deploy::git_state;
 use crate::model::{EvidenceRecord, HandoffRecord, Project, SessionRecord};
 use crate::paths::{AppPaths, secure_dir};
+use crate::process::capture_tool;
 use crate::registry::{RegistryLock, now_unix};
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
@@ -8,7 +9,6 @@ use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::Path;
-use std::process::Command;
 
 const SESSION_SCHEMA: u32 = 1;
 const HANDOFF_SCHEMA: u32 = 1;
@@ -52,18 +52,23 @@ pub fn start_session(
     if worktree.exists() || worktree.is_symlink() {
         bail!("session worktree already exists: {}", worktree.display());
     }
-    let output = Command::new("git")
-        .args(["-C"])
-        .arg(&project.project_root)
-        .args(["worktree", "add", "-b", &branch])
-        .arg(&worktree)
-        .output()
-        .context("start git worktree session")?;
-    if !output.status.success() {
-        bail!(
-            "git could not create session worktree: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
+    let project_root = project.project_root.to_string_lossy();
+    let worktree_path = worktree.to_string_lossy();
+    let output = capture_tool(
+        "git",
+        &[
+            "-C",
+            &project_root,
+            "worktree",
+            "add",
+            "-b",
+            &branch,
+            &worktree_path,
+        ],
+        None,
+    );
+    if !output.ok {
+        bail!("git could not create session worktree: {}", output.output);
     }
     let started_at_unix = now_unix();
     let record = SessionRecord {
