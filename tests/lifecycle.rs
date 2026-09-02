@@ -1319,7 +1319,10 @@ fn security_review_history_and_show_preserve_exact_commit_evidence() {
     )
     .unwrap();
     git(&harness.project, &["add", "README.md"]);
-    git(&harness.project, &["commit", "-m", "advance review revision"]);
+    git(
+        &harness.project,
+        &["commit", "-m", "advance review revision"],
+    );
     let second_revision = git(&harness.project, &["rev-parse", "HEAD"]);
     harness.import_security_review(
         "incomplete",

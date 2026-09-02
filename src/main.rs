@@ -148,7 +148,10 @@ enum Command {
     /// Create an isolated worktree and private brief for reviewed findings.
     SecurityRemediationStart {
         id: String,
-        #[arg(long = "finding", help = "Finding id to remediate; omit to include all")]
+        #[arg(
+            long = "finding",
+            help = "Finding id to remediate; omit to include all"
+        )]
         findings: Vec<String>,
         #[arg(long, help = "Optional agent label stored as local session metadata")]
         agent: Option<String>,
@@ -610,38 +613,29 @@ fn run(cli: &Cli) -> Result<()> {
                 &format!("Security review status: {}", report.status),
             )
         }),
-        Command::SecurityReviewHistory { id, limit } => {
-            with_project(&paths, id, |project| {
-                let report = security::history(&paths, project, *limit)?;
-                let message = format!("{} security review record(s)", report.reviews.len());
-                emit(cli.json, &report, &message)
-            })
-        }
-        Command::SecurityReviewShow { id, revision } => {
-            with_project(&paths, id, |project| {
-                let report = security::show(&paths, project, revision.as_deref())?;
-                emit(
-                    cli.json,
-                    &report,
-                    &format!(
-                        "Security review {} has {} finding(s)",
-                        &report.review.revision[..12],
-                        report.review.findings.len()
-                    ),
-                )
-            })
-        }
+        Command::SecurityReviewHistory { id, limit } => with_project(&paths, id, |project| {
+            let report = security::history(&paths, project, *limit)?;
+            let message = format!("{} security review record(s)", report.reviews.len());
+            emit(cli.json, &report, &message)
+        }),
+        Command::SecurityReviewShow { id, revision } => with_project(&paths, id, |project| {
+            let report = security::show(&paths, project, revision.as_deref())?;
+            emit(
+                cli.json,
+                &report,
+                &format!(
+                    "Security review {} has {} finding(s)",
+                    &report.review.revision[..12],
+                    report.review.findings.len()
+                ),
+            )
+        }),
         Command::SecurityRemediationStart {
             id,
             findings,
             agent,
         } => with_project(&paths, id, |project| {
-            let report = security::start_remediation(
-                &paths,
-                project,
-                findings,
-                agent.as_deref(),
-            )?;
+            let report = security::start_remediation(&paths, project, findings, agent.as_deref())?;
             emit(cli.json, &report, &report.message)
         }),
         Command::SecurityReviewDossier { id } => with_project(&paths, id, |project| {
