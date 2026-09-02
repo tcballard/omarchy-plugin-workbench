@@ -280,11 +280,35 @@ After remediation, prepare a fix-verification brief against the latest imported 
 bin/omarchy-plugin-workbench security-review-prepare io.github.example.plugin --verify-fixes
 ```
 
+Review evidence remains inspectable instead of being collapsed into one status flag. History preserves every imported exact-commit result, while `show` returns the complete latest report or the latest report at a named full revision:
+
+```bash
+bin/omarchy-plugin-workbench security-review-history io.github.example.plugin
+bin/omarchy-plugin-workbench security-review-show io.github.example.plugin
+bin/omarchy-plugin-workbench security-review-show io.github.example.plugin \
+  --revision FULL_40_CHARACTER_REVIEWED_COMMIT
+```
+
+When a current review has findings, Workbench can turn all findings—or selected ids—into one private remediation brief and isolated Git worktree. The source checkout remains untouched and publication is excluded from the generated objective:
+
+```bash
+bin/omarchy-plugin-workbench security-remediation-start io.github.example.plugin \
+  --finding SEC-001 --agent codex
+```
+
+After a current review reaches `Ready`, generate a shareable Markdown and JSON dossier containing the plugin identity, exact reviewed commit, review-record digest, findings, executable provenance and current-revision Workbench evidence:
+
+```bash
+bin/omarchy-plugin-workbench security-review-dossier io.github.example.plugin
+```
+
+The dossier is written to private state and is not uploaded or attached automatically. It becomes stale with the review as soon as the source moves.
+
 Release and marketplace submission preparation require a current `Ready` manual review. Workbench records the result as evidence but does not describe it as certification, warranty, marketplace approval, or a replacement for maintainer review.
 
 ## Release and marketplace submission preparation
 
-`release-plan` converts passing readiness evidence into an owner-only JSON plan containing the exact current revision, tag and reviewable argv arrays. It does not execute them. `submission-prepare` validates the root layout, README, licence, category, one-to-three official tags, cached ID/repository collisions and explicit confirmation of the five official checklist statements, then writes the current official issue body without creating a public issue.
+`release-plan` converts passing readiness evidence into an owner-only JSON plan containing the exact current revision, tag and reviewable argv arrays. It does not execute them. `submission-prepare` validates the root layout, README, licence, category, one-to-three official tags, cached ID/repository collisions and explicit confirmation of the five official checklist statements, then writes the current official issue body and matching exact-commit security dossier without creating a public issue.
 
 ```bash
 bin/omarchy-plugin-workbench release-plan io.github.example.plugin
@@ -308,6 +332,7 @@ The final tag, push, GitHub release and marketplace issue remain explicit public
 | `~/.local/state/omarchy/plugin-workbench/test-sessions/` | Disposable nested compositor homes, config, logs, and ownership records |
 | `~/.local/state/omarchy/plugin-workbench/handoffs/` | Structured continuation records |
 | `~/.local/state/omarchy/plugin-workbench/evidence/` | Append-only per-project evidence ledgers |
+| `~/.local/state/omarchy/plugin-workbench/security-reviews/` | Review history, remediation briefs, and exact-commit dossiers |
 | `~/.local/state/omarchy/plugin-workbench/marketplace/catalog.json` | Explicitly refreshed official catalogue cache |
 | `~/.local/state/omarchy/plugin-workbench/marketplace/receipts/` | Workbench marketplace ownership and reviewed revisions |
 | `~/.local/state/omarchy/plugin-workbench/marketplace/trash/` | Recoverable repair/uninstall checkouts |

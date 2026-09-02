@@ -1142,6 +1142,8 @@ fn submission_prepare_emits_the_current_official_form_without_publishing() {
     );
     assert!(PathBuf::from(draft["draftFile"].as_str().unwrap()).is_file());
     assert_eq!(draft["securityReviewStatus"], "ready");
+    assert!(PathBuf::from(draft["securityDossierFile"].as_str().unwrap()).is_file());
+    assert!(PathBuf::from(draft["securityDossierJsonFile"].as_str().unwrap()).is_file());
 }
 
 #[test]
@@ -1284,4 +1286,155 @@ fn fix_review_brief_requires_prior_findings_and_a_new_commit() {
     let prompt = fs::read_to_string(prepared["promptFile"].as_str().unwrap()).unwrap();
     assert!(prompt.contains("fix-verification review"));
     assert!(prompt.contains("confirmed`, `partial`, or `not-fixed"));
+}
+
+#[test]
+fn security_review_history_and_show_preserve_exact_commit_evidence() {
+    let harness = Harness::new();
+    harness.initialise_git();
+    let project = harness.project.to_string_lossy().into_owned();
+    harness.json(&["add", &project, "--json"]);
+    let first_revision = git(&harness.project, &["rev-parse", "HEAD"]);
+    harness.import_security_review(
+        "needs-fixes",
+        serde_json::json!([{
+            "id": "SEC-001",
+            "severity": "high",
+            "file": "Panel.qml",
+            "line": 2,
+            "summary": "Untrusted content reaches a sensitive sink",
+            "untrustedSource": "remote label",
+            "sensitiveSink": "QML rich text",
+            "attackPath": "remote response to rendered label",
+            "impact": "markup injection",
+            "remediation": "render as plain text",
+            "verification": "inspect every dynamic Text sink"
+        }]),
+        serde_json::json!(["SEC-001 remains open"]),
+        Value::Array(Vec::new()),
+    );
+    fs::write(
+        harness.project.join("README.md"),
+        "Second exact review revision",
+    )
+    .unwrap();
+    git(&harness.project, &["add", "README.md"]);
+    git(&harness.project, &["commit", "-m", "advance review revision"]);
+    let second_revision = git(&harness.project, &["rev-parse", "HEAD"]);
+    harness.import_security_review(
+        "incomplete",
+        Value::Array(Vec::new()),
+        serde_json::json!(["manual analysis remains incomplete"]),
+        Value::Array(Vec::new()),
+    );
+
+    let history = harness.json(&[
+        "security-review-history",
+        "io.test.workbench-demo",
+        "--limit",
+        "10",
+        "--json",
+    ]);
+    assert_eq!(history["reviews"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        history["reviews"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|review| review["current"] == true)
+            .count(),
+        1
+    );
+    assert!(history["reviews"].as_array().unwrap().iter().any(|review| {
+        review["revision"] == first_revision
+            && review["status"] == "stale"
+            && review["severityCounts"]["high"] == 1
+    }));
+    assert!(history["reviews"].as_array().unwrap().iter().any(|review| {
+        review["revision"] == second_revision
+            && review["status"] == "incomplete"
+            && review["current"] == true
+    }));
+
+    let shown = harness.json(&[
+        "security-review-show",
+        "io.test.workbench-demo",
+        "--revision",
+        &first_revision,
+        "--json",
+    ]);
+    assert_eq!(shown["status"], "stale");
+    assert_eq!(shown["review"]["revision"], first_revision);
+    assert_eq!(shown["review"]["findings"][0]["id"], "SEC-001");
+}
+
+#[test]
+fn security_remediation_starts_an_isolated_session_from_reviewed_findings() {
+    let harness = Harness::new();
+    harness.initialise_git();
+    let project = harness.project.to_string_lossy().into_owned();
+    harness.json(&["add", &project, "--json"]);
+    harness.import_security_review(
+        "needs-fixes",
+        serde_json::json!([{
+            "id": "SEC-001",
+            "severity": "high",
+            "file": "Panel.qml",
+            "line": 2,
+            "summary": "Untrusted content reaches a sensitive sink",
+            "untrustedSource": "remote label",
+            "sensitiveSink": "QML rich text",
+            "attackPath": "remote response to rendered label",
+            "impact": "markup injection",
+            "remediation": "render as plain text",
+            "verification": "inspect every dynamic Text sink"
+        }]),
+        serde_json::json!(["SEC-001 remains open"]),
+        Value::Array(Vec::new()),
+    );
+
+    let remediation = harness.json(&[
+        "security-remediation-start",
+        "io.test.workbench-demo",
+        "--finding",
+        "SEC-001",
+        "--agent",
+        "codex",
+        "--json",
+    ]);
+    assert_eq!(remediation["ok"], true);
+    assert_eq!(remediation["findingIds"], serde_json::json!(["SEC-001"]));
+    let worktree = PathBuf::from(remediation["session"]["worktree"].as_str().unwrap());
+    assert!(worktree.join("manifest.json").is_file());
+    assert!(PathBuf::from(remediation["briefFile"].as_str().unwrap()).is_file());
+    let brief = fs::read_to_string(remediation["briefFile"].as_str().unwrap()).unwrap();
+    assert!(brief.contains("SEC-001"));
+    assert!(brief.contains("Do not publish"));
+    assert_eq!(git(&harness.project, &["status", "--porcelain"]), "");
+}
+
+#[test]
+fn ready_review_exports_a_shareable_exact_commit_dossier() {
+    let harness = Harness::new();
+    harness.initialise_git();
+    let project = harness.project.to_string_lossy().into_owned();
+    harness.json(&["add", &project, "--json"]);
+    harness.import_ready_security_review();
+
+    let dossier = harness.json(&[
+        "security-review-dossier",
+        "io.test.workbench-demo",
+        "--json",
+    ]);
+    let revision = git(&harness.project, &["rev-parse", "HEAD"]);
+    assert_eq!(dossier["ok"], true);
+    assert_eq!(dossier["revision"], revision);
+    assert_eq!(dossier["result"], "ready");
+    assert_eq!(dossier["reportSha256"].as_str().unwrap().len(), 64);
+    assert!(dossier["evidenceRecords"].as_u64().unwrap() >= 1);
+    let markdown = fs::read_to_string(dossier["dossierFile"].as_str().unwrap()).unwrap();
+    assert!(markdown.contains("# Omarchy plugin security dossier"));
+    assert!(markdown.contains(&revision));
+    assert!(markdown.contains("not certification"));
+    assert!(PathBuf::from(dossier["jsonFile"].as_str().unwrap()).is_file());
 }

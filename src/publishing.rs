@@ -70,6 +70,8 @@ pub struct SubmissionDraft {
     pub blockers: Vec<String>,
     pub security_review_status: String,
     pub security_review_revision: Option<String>,
+    pub security_dossier_file: Option<PathBuf>,
+    pub security_dossier_json_file: Option<PathBuf>,
 }
 
 pub fn release_plan(paths: &AppPaths, project: &Project) -> Result<ReleasePlan> {
@@ -202,6 +204,11 @@ pub fn submission_draft(
     if let Some(collision) = &collision {
         blockers.push(collision.clone());
     }
+    let security_dossier = if blockers.is_empty() {
+        Some(crate::security::dossier(paths, project)?)
+    } else {
+        None
+    };
     let body = format!(
         "### Repository URL\n\n{repository}\n\n### Category\n\n{category}\n\n### Tags\n\n{}\n\n### Suggest a missing tag\n\n{}\n\n### Maintainer notes\n\n{}\n\n### Submission checklist\n\n- [x] The repository is public and contains installation and removal instructions.\n- [x] I have documented the plugin license and any external dependencies.\n- [x] I confirm that I own or have permission to submit this plugin and its preview assets.\n- [x] The plugin does not overwrite user configuration without explicit consent.\n- [x] I understand that approval is for listing and is not a security review.\n",
         unique_tags.join(", "),
@@ -230,6 +237,10 @@ pub fn submission_draft(
         blockers,
         security_review_status: security.status,
         security_review_revision: security.reviewed_revision,
+        security_dossier_file: security_dossier
+            .as_ref()
+            .map(|dossier| dossier.dossier_file.clone()),
+        security_dossier_json_file: security_dossier.map(|dossier| dossier.json_file),
     })
 }
 

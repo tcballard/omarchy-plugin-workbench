@@ -844,6 +844,27 @@ Panel {
           label: "Security status"
           onTriggered: root.runAction("security-review-status", card.project.id)
         }
+        WorkbenchButton {
+          visible: Number(card.project.securityReviewFindings || 0) > 0
+          label: "Findings (" + Number(card.project.securityReviewFindings || 0) + ")"
+          onTriggered: root.runAction("security-review-show", card.project.id)
+        }
+        WorkbenchButton {
+          visible: card.project.securityReviewStatus !== "incomplete"
+          label: "Review history"
+          onTriggered: root.runAction("security-review-history", card.project.id)
+        }
+        WorkbenchButton {
+          visible: card.project.securityReviewStatus === "needs-fixes"
+            && Number(card.project.securityReviewFindings || 0) > 0
+          label: "Start fix session"
+          onTriggered: root.runAction("security-remediation-start", card.project.id)
+        }
+        WorkbenchButton {
+          visible: card.project.securityReviewStatus === "ready"
+          label: "Security dossier"
+          onTriggered: root.runAction("security-review-dossier", card.project.id)
+        }
         WorkbenchButton { label: "Release check"; onTriggered: root.runAction("release-check", card.project.id) }
         WorkbenchButton { label: "Live link"; onTriggered: root.runAction("link", card.project.id) }
         WorkbenchButton { label: "Snapshot"; onTriggered: root.runAction("snapshot", card.project.id) }

@@ -16,7 +16,7 @@ Successful installs create a separate ownership receipt. Only a normal directory
 
 ## Publishing boundary
 
-Release planning consumes current release-readiness evidence and emits exact inert argv arrays. Submission preparation mirrors the current official form and gates root layout, documentation, licence, taxonomy, cached collisions, owner checklist confirmation, and a current exact-commit `Ready` manual security review. These artifacts stop at the public-identity boundary: Workbench does not run tag/push/release commands or submit issues.
+Release planning consumes current release-readiness evidence and emits exact inert argv arrays. Submission preparation mirrors the current official form and gates root layout, documentation, licence, taxonomy, cached collisions, owner checklist confirmation, and a current exact-commit `Ready` manual security review. A passing preparation also emits the matching security dossier. These artifacts stop at the public-identity boundary: Workbench does not run tag/push/release commands or submit issues.
 
 ## Security-review boundary
 
@@ -25,6 +25,12 @@ Security review deliberately does not reuse the executable validation path. Prep
 The generated owner-only prompt requires a complete manual review and a schema-one final JSON report. Import uses `O_NOFOLLOW`, rejects oversized, linked, special, mismatched-project and mismatched-revision files, validates finding and fix vocabularies, and stores the accepted result under private Workbench state. `Ready` is rejected when blockers or unresolved critical/high/medium findings remain, the inventory was truncated, or any detected executable lacks reviewed-source/signature/attestation/reproducibility evidence.
 
 The latest imported record is compared with both current `HEAD` and worktree cleanliness on every status query. Source movement derives `stale`; it never silently carries approval forward. Fix verification embeds the previous findings only after the source reaches a different exact commit. Workbench records the review as evidence, not certification or marketplace approval.
+
+Imported records are append-only and receive a monotonic local review timestamp even when multiple imports occur within one wall-clock second. History and detail queries never execute project code and make earlier reports visibly stale rather than erasing them.
+
+Remediation starts only from a clean checkout at the latest reviewed commit. It selects reviewed finding ids, writes a private bounded brief, and creates an isolated Git worktree through the existing session boundary. It does not edit the source checkout or publish the resulting branch. A later clean commit must still pass the independent fix-verification review.
+
+A `Ready` review can be rendered into private Markdown and JSON dossiers. They contain no automatic trust elevation or public action: the exact commit, review-record digest, executable provenance and bounded current-revision evidence are assembled for human inspection and deliberate sharing.
 
 ## Installed plugin updates
 
