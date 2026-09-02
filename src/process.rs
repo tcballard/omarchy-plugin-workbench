@@ -436,11 +436,9 @@ fn project_tool_path(name: &str, cwd: Option<&Path>) -> Option<PathBuf> {
     }
     let path = std::env::var_os("PATH")?;
     std::env::split_paths(&path)
-        .map(|directory| {
-            match cwd {
-                Some(cwd) if !directory.is_absolute() => cwd.join(&directory).join(name),
-                _ => directory.join(name),
-            }
+        .map(|directory| match cwd {
+            Some(cwd) if !directory.is_absolute() => cwd.join(&directory).join(name),
+            _ => directory.join(name),
         })
         .find_map(|path| executable_file(&path))
 }
