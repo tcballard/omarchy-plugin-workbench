@@ -152,7 +152,7 @@ Panel {
         root.messageError = true
       }
     } catch (error) {
-      root.message = "Could not parse Workbench status: " + error
+      root.message = "Could not parse Build project status: " + error
       root.messageError = true
     }
   }
@@ -349,7 +349,7 @@ Panel {
   function updateMarketplace(plugin) {
     if (root.busy || !root.helperPath || !plugin.managed || !plugin.updateAvailable) return
     root.pendingAction = "marketplace-update"
-    root.message = "Applying reviewed marketplace update for " + plugin.name + "…"
+    root.message = "Applying reviewed plugin update for " + plugin.name + "…"
     root.messageError = false
     actionProcess.command = [root.helperPath, "marketplace-update", plugin.id,
       "--revision", plugin.reviewedRevision, "--yes", "--json"]
@@ -359,7 +359,7 @@ Panel {
   function updateManagedPlugin(plugin) {
     if (root.busy || !root.helperPath || !plugin.updateAvailable || !plugin.catalogueRevision) return
     root.pendingAction = "marketplace-update"
-    root.message = "Applying reviewed marketplace update for " + plugin.id + "…"
+    root.message = "Applying reviewed plugin update for " + plugin.id + "…"
     root.messageError = false
     actionProcess.command = [root.helperPath, "marketplace-update", plugin.id,
       "--revision", plugin.catalogueRevision, "--yes", "--json"]
@@ -1109,7 +1109,7 @@ Panel {
 
                 Text {
                   width: parent.width
-                  text: "Use New plugin above for a safe starter, or use Build Omarchy Plugins when you want an agent-guided custom build. Workbench never scans your home directory automatically."
+                  text: "Use New plugin above for a safe starter, or use Build Omarchy Plugins when you want an agent-guided custom build. Discovery Build never scans your home directory automatically."
                   color: Qt.rgba(root.barForeground.r, root.barForeground.g, root.barForeground.b, 0.58)
                   font.family: root.bar ? root.bar.fontFamily : Style.font.family
                   font.pixelSize: Style.font.body
@@ -1299,7 +1299,7 @@ Panel {
     readonly property bool healthy: state === "up-to-date" || state === "current"
       || state === "enabled" || state === "disabled"
     readonly property string sourceLabel: plugin.management === "first-party" ? "OMARCHY"
-      : plugin.management === "marketplace" ? "MARKETPLACE MANAGED"
+      : plugin.management === "marketplace" ? "REVIEWED PLUGIN"
       : plugin.management === "live-link" ? "LIVE DEVELOPMENT LINK"
       : plugin.management === "git" ? "DIRECT GIT CHECKOUT"
       : "LOCAL PLUGIN"
