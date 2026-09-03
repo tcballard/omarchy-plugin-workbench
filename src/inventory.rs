@@ -71,7 +71,10 @@ pub fn inspect(paths: &AppPaths) -> Result<InstalledReport> {
         } else {
             "local"
         };
-        object.insert("management".to_owned(), Value::String(management.to_owned()));
+        object.insert(
+            "management".to_owned(),
+            Value::String(management.to_owned()),
+        );
         if let Some(managed_plugin) = managed_plugin {
             object.insert(
                 "managedState".to_owned(),
