@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add a native New plugin flow with validated Panel, bar-widget, and service starters, atomic no-overwrite creation, Git initialisation, and automatic registration.
+- Give each project one state-aware recommended action while keeping specialist controls behind More actions; add explicit Undeploy and Forget controls.
+- Add Arrow/J/K, Page Up/Down, Home, and End navigation to both virtualized panel feeds.
 - Virtualize and reuse marketplace and project-card delegates so panel scrolling does not lay out every result at once.
 - Add exact-commit, strictly read-only security-review briefs based on the Omarchy marketplace maintainer review method.
 - Add bounded static inventories of trust-boundary cues, symlinks, and executable artifacts without running repository code.

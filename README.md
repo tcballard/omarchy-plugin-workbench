@@ -23,6 +23,7 @@ rm -rf -- "$HOME/.config/omarchy/plugin-workbench" \
 
 It answers two different development needs explicitly:
 
+- **New plugin** creates a validated personal Panel, bar widget, or service starter at an explicit absolute path, initializes Git, and registers it without committing or replacing existing files.
 - **Live link** points Omarchy at the mutable plugin checkout for the fastest edit/reload loop.
 - **Snapshot** copies the plugin into an immutable, content-addressed deployment and atomically switches Omarchy to it. Previous managed deployments remain available for rollback.
 - **Test window** launches a disposable nested Hyprland compositor with an isolated Omarchy shell configuration and a live link to the project.
@@ -57,6 +58,21 @@ For each explicitly registered project, Workbench shows:
 - Drift when the managed link changes outside Workbench.
 
 Available actions include Validate, Security review, Test, Test window, capability workflows, environment diagnostics, isolated sessions, handoffs, evidence, release readiness, Live link, Snapshot, Rollback, Enable, Disable, Undeploy, reviewed installed-plugin updates, Logs, and Doctor.
+
+The project and marketplace feeds support Arrow Up/Down (or J/K), Page Up/Down, Home, and End. Project cards lead with one state-aware next action; specialist operations remain under **More actions**.
+
+## Create a personal plugin
+
+Use **New plugin** in the panel, or create and register the same safe starter from the CLI:
+
+```bash
+bin/omarchy-plugin-workbench new /absolute/path/my-plugin \
+  --id io.github.you.my-plugin \
+  --name "My Plugin" \
+  --kind panel
+```
+
+`panel` creates both a panel and its bar-widget launcher. `bar-widget` and `service` create focused single-entry-point starters. Workbench stages and validates the complete tree before publishing it, refuses an existing destination, initializes a `main` Git repository when Git is available, and never creates a commit or runs plugin code.
 
 ## Search and install official marketplace listings
 

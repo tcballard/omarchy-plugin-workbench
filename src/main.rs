@@ -7,6 +7,7 @@ mod paths;
 mod process;
 mod publishing;
 mod registry;
+mod scaffold;
 mod security;
 mod test_session;
 mod updates;
@@ -32,6 +33,16 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Create and register a new personal plugin project.
+    New {
+        path: PathBuf,
+        #[arg(long)]
+        id: String,
+        #[arg(long)]
+        name: String,
+        #[arg(long, default_value = "panel")]
+        kind: String,
+    },
     /// Register an explicit local plugin project.
     Add {
         path: PathBuf,
@@ -300,6 +311,31 @@ fn run(cli: &Cli) -> Result<()> {
     let paths = AppPaths::discover()?;
     paths.ensure()?;
     match &cli.command {
+        Command::New {
+            path,
+            id,
+            name,
+            kind,
+        } => {
+            let scaffold = scaffold::create(path, id, name, kind)?;
+            let project = registry::add_project(&paths, &scaffold.path, None, false)
+                .with_context(|| {
+                    format!(
+                        "plugin files were created at {}, but registration failed",
+                        scaffold.path.display()
+                    )
+                })?;
+            emit(
+                cli.json,
+                &json!({
+                    "ok": true,
+                    "action": "new",
+                    "project": project,
+                    "scaffold": scaffold
+                }),
+                &format!("Created and registered {} ({})", project.name, project.id),
+            )
+        }
         Command::Add {
             path,
             plugin_path,

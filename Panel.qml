@@ -33,6 +33,8 @@ Panel {
   property string actionOutput: ""
   property string actionError: ""
   property bool showBuilderSetup: false
+  property bool createProjectOpen: true
+  property string newPluginKind: "panel"
   property string pendingAction: ""
   readonly property int projectCount: projects.length
   readonly property int availableUpdateCount: pluginUpdates.filter(function(plugin) { return plugin.updateable }).length
@@ -101,6 +103,39 @@ Panel {
     root.pendingAction = "project"
     actionProcess.command = [root.helperPath, "add", path, "--json"]
     actionProcess.running = true
+  }
+
+  function createProject() {
+    var path = String(newPathInput.text || "").trim()
+    var id = String(newIdInput.text || "").trim()
+    var name = String(newNameInput.text || "").trim()
+    if (!path || !id || !name || root.busy) return
+    root.actionOutput = ""
+    root.actionError = ""
+    root.message = "Creating " + name + "…"
+    root.messageError = false
+    root.pendingAction = "new"
+    actionProcess.command = [root.helperPath, "new", path, "--id", id,
+      "--name", name, "--kind", root.newPluginKind, "--json"]
+    actionProcess.running = true
+  }
+
+  function activeFeed() {
+    return root.marketplaceOpen ? marketplaceList : projectList
+  }
+
+  function scrollFeed(amount) {
+    var feed = activeFeed()
+    var minimum = feed.originY
+    var maximum = minimum + Math.max(0, feed.contentHeight - feed.height)
+    feed.contentY = Math.max(minimum, Math.min(maximum, feed.contentY + amount))
+  }
+
+  function scrollFeedEdge(end) {
+    var feed = activeFeed()
+    feed.contentY = end
+      ? feed.originY + Math.max(0, feed.contentHeight - feed.height)
+      : feed.originY
   }
 
   function checkUpdates() {
@@ -266,6 +301,11 @@ Panel {
       : errorText || text || (exitCode === 0 ? "Action completed" : "Action failed")
     if (exitCode === 0) {
       pathInput.text = ""
+      if (root.pendingAction === "new") {
+        newNameInput.text = ""
+        newIdInput.text = ""
+        newPathInput.text = ""
+      }
       if (root.pendingAction === "update") Qt.callLater(root.checkUpdates)
       else if (root.pendingAction.indexOf("marketplace-") === 0) Qt.callLater(root.searchMarketplace)
       else Qt.callLater(root.refresh)
@@ -328,6 +368,25 @@ Panel {
       anchors.fill: parent
       onCloseRequested: root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
+      Keys.onPressed: function(event) {
+        if (event.modifiers !== Qt.NoModifier) return
+        if (event.key === Qt.Key_Down || event.key === Qt.Key_J) {
+          root.scrollFeed(Style.space(56))
+        } else if (event.key === Qt.Key_Up || event.key === Qt.Key_K) {
+          root.scrollFeed(-Style.space(56))
+        } else if (event.key === Qt.Key_PageDown) {
+          root.scrollFeed(root.activeFeed().height * 0.82)
+        } else if (event.key === Qt.Key_PageUp) {
+          root.scrollFeed(-root.activeFeed().height * 0.82)
+        } else if (event.key === Qt.Key_Home) {
+          root.scrollFeedEdge(false)
+        } else if (event.key === Qt.Key_End) {
+          root.scrollFeedEdge(true)
+        } else {
+          return
+        }
+        event.accepted = true
+      }
 
       Rectangle {
         anchors.fill: parent
@@ -355,8 +414,9 @@ Panel {
               }
               Text {
                 text: root.marketplaceOpen
-                  ? root.marketplaceMatched + " of " + root.marketplaceTotal + " marketplace listings"
+                  ? root.marketplaceMatched + " of " + root.marketplaceTotal + " marketplace listings · ↑↓ scroll"
                   : root.projectCount + (root.projectCount === 1 ? " registered project" : " registered projects")
+                    + " · ↑↓ scroll"
                 color: Qt.rgba(root.barForeground.r, root.barForeground.g, root.barForeground.b, 0.62)
                 font.family: root.bar ? root.bar.fontFamily : Style.font.family
                 font.pixelSize: Style.font.caption
@@ -388,44 +448,100 @@ Panel {
           Rectangle {
             visible: !root.marketplaceOpen
             width: parent.width
-            height: visible ? Style.space(38) : 0
+            height: visible ? (root.createProjectOpen ? Style.space(124) : Style.space(82)) : 0
             color: "transparent"
             border.color: Qt.rgba(root.barForeground.r, root.barForeground.g, root.barForeground.b, 0.28)
             border.width: 1
             radius: Style.cornerRadius
 
-            Row {
+            Column {
               anchors.fill: parent
               anchors.margins: Style.space(7)
-              spacing: Style.space(8)
+              spacing: Style.space(6)
 
-              TextInput {
-                id: pathInput
-                width: parent.width - addButton.width - Style.space(8)
-                height: parent.height
-                color: root.barForeground
-                selectionColor: Color.accent
-                font.family: root.bar ? root.bar.fontFamily : Style.font.family
-                font.pixelSize: Style.font.body
-                verticalAlignment: TextInput.AlignVCenter
-                clip: true
-                selectByMouse: true
-                onAccepted: root.addProject()
-
-                Text {
-                  anchors.verticalCenter: parent.verticalCenter
-                  visible: !pathInput.text
-                  text: "Absolute path to a local plugin project"
-                  color: Qt.rgba(root.barForeground.r, root.barForeground.g, root.barForeground.b, 0.42)
-                  font: pathInput.font
+              Row {
+                spacing: Style.space(6)
+                WorkbenchButton {
+                  label: root.createProjectOpen ? "New plugin ✓" : "New plugin"
+                  onTriggered: root.createProjectOpen = true
+                }
+                WorkbenchButton {
+                  label: root.createProjectOpen ? "Add existing" : "Add existing ✓"
+                  onTriggered: root.createProjectOpen = false
                 }
               }
 
-              WorkbenchButton {
-                id: addButton
-                label: "Register"
-                enabled: !root.busy && String(pathInput.text || "").trim() !== ""
-                onTriggered: root.addProject()
+              Row {
+                visible: root.createProjectOpen
+                height: visible ? Style.space(32) : 0
+                width: parent.width
+                spacing: Style.space(6)
+                WorkbenchField {
+                  id: newNameInput
+                  width: parent.width * 0.34
+                  placeholder: "Plugin name"
+                }
+                WorkbenchField {
+                  id: newIdInput
+                  width: parent.width * 0.66 - Style.space(6)
+                  placeholder: "Plugin ID · io.github.you.plugin"
+                }
+              }
+
+              Row {
+                visible: root.createProjectOpen
+                height: visible ? Style.space(32) : 0
+                width: parent.width
+                spacing: Style.space(6)
+                WorkbenchField {
+                  id: newPathInput
+                  width: parent.width - kindPanel.width - kindWidget.width - kindService.width
+                    - createButton.width - Style.space(24)
+                  placeholder: "New absolute folder path"
+                  onAccepted: root.createProject()
+                }
+                WorkbenchButton {
+                  id: kindPanel
+                  label: root.newPluginKind === "panel" ? "Panel ✓" : "Panel"
+                  onTriggered: root.newPluginKind = "panel"
+                }
+                WorkbenchButton {
+                  id: kindWidget
+                  label: root.newPluginKind === "bar-widget" ? "Widget ✓" : "Widget"
+                  onTriggered: root.newPluginKind = "bar-widget"
+                }
+                WorkbenchButton {
+                  id: kindService
+                  label: root.newPluginKind === "service" ? "Service ✓" : "Service"
+                  onTriggered: root.newPluginKind = "service"
+                }
+                WorkbenchButton {
+                  id: createButton
+                  label: "Create"
+                  enabled: !root.busy && String(newNameInput.text || "").trim() !== ""
+                    && String(newIdInput.text || "").trim() !== ""
+                    && String(newPathInput.text || "").trim() !== ""
+                  onTriggered: root.createProject()
+                }
+              }
+
+              Row {
+                visible: !root.createProjectOpen
+                height: visible ? Style.space(32) : 0
+                width: parent.width
+                spacing: Style.space(8)
+                WorkbenchField {
+                  id: pathInput
+                  width: parent.width - addButton.width - Style.space(8)
+                  placeholder: "Absolute path to an existing plugin project"
+                  onAccepted: root.addProject()
+                }
+                WorkbenchButton {
+                  id: addButton
+                  label: "Register"
+                  enabled: !root.busy && String(pathInput.text || "").trim() !== ""
+                  onTriggered: root.addProject()
+                }
               }
             }
           }
@@ -669,7 +785,7 @@ Panel {
 
                 Text {
                   width: parent.width
-                  text: "Create with Build Omarchy Plugins"
+                  text: "Create your first personal plugin"
                   color: root.barForeground
                   font.family: root.bar ? root.bar.fontFamily : Style.font.family
                   font.pixelSize: Style.font.body
@@ -679,7 +795,7 @@ Panel {
 
                 Text {
                   width: parent.width
-                  text: "Use the agent companion to scaffold a project, then register its checkout here. Workbench never scans your home directory automatically."
+                  text: "Use New plugin above for a safe starter, or use Build Omarchy Plugins when you want an agent-guided custom build. Workbench never scans your home directory automatically."
                   color: Qt.rgba(root.barForeground.r, root.barForeground.g, root.barForeground.b, 0.58)
                   font.family: root.bar ? root.bar.fontFamily : Style.font.family
                   font.pixelSize: Style.font.body
@@ -746,9 +862,58 @@ Panel {
     TapHandler { enabled: actionButton.enabled; onTapped: actionButton.triggered() }
   }
 
+  component WorkbenchField: Rectangle {
+    id: field
+    property alias text: fieldInput.text
+    property string placeholder: ""
+    signal accepted()
+    implicitHeight: Style.space(32)
+    color: Qt.rgba(root.barForeground.r, root.barForeground.g, root.barForeground.b, 0.055)
+    border.color: fieldInput.activeFocus
+      ? Color.accent : Qt.rgba(root.barForeground.r, root.barForeground.g, root.barForeground.b, 0.18)
+    border.width: 1
+    radius: Style.cornerRadius
+
+    TextInput {
+      id: fieldInput
+      anchors.fill: parent
+      anchors.leftMargin: Style.space(8)
+      anchors.rightMargin: Style.space(8)
+      color: root.barForeground
+      selectionColor: Color.accent
+      font.family: root.bar ? root.bar.fontFamily : Style.font.family
+      font.pixelSize: Style.font.caption
+      verticalAlignment: TextInput.AlignVCenter
+      clip: true
+      selectByMouse: true
+      onAccepted: field.accepted()
+
+      Text {
+        anchors.verticalCenter: parent.verticalCenter
+        visible: !fieldInput.text
+        text: field.placeholder
+        textFormat: Text.PlainText
+        color: Qt.rgba(root.barForeground.r, root.barForeground.g, root.barForeground.b, 0.42)
+        font: fieldInput.font
+      }
+    }
+  }
+
   component ProjectCard: Rectangle {
     id: card
     required property var project
+    property bool expanded: false
+    readonly property bool hasTrustedFeatures: Number(project.checks || 0)
+      + Number(project.workflows || 0) + Number(project.environmentRequirements || 0) > 0
+    readonly property string nextAction: Number(project.activeTestSessions || 0) > 0
+      ? "test-session-stop"
+      : project.deployment === "not-deployed" ? "link"
+      : hasTrustedFeatures && !project.projectChecksTrusted ? "trust"
+      : "test-session-start"
+    readonly property string nextLabel: nextAction === "test-session-stop" ? "Stop test window"
+      : nextAction === "link" ? "Start live development"
+      : nextAction === "trust" ? "Review & trust commands"
+      : "Open test window"
     implicitHeight: cardContent.implicitHeight + Style.space(20)
     color: Qt.rgba(root.barForeground.r, root.barForeground.g, root.barForeground.b, 0.055)
     radius: Style.cornerRadius
@@ -824,58 +989,92 @@ Panel {
       Flow {
         width: parent.width
         spacing: Style.space(5)
-        WorkbenchButton { label: "Validate"; onTriggered: root.runAction("validate", card.project.id) }
         WorkbenchButton {
-          visible: Number(card.project.checks || 0) + Number(card.project.workflows || 0)
-            + Number(card.project.environmentRequirements || 0) > 0
+          label: card.nextLabel
+          onTriggered: root.runAction(card.nextAction, card.project.id)
+        }
+        WorkbenchButton {
+          label: card.expanded ? "Fewer actions" : "More actions"
+          onTriggered: card.expanded = !card.expanded
+        }
+        WorkbenchButton {
+          visible: card.expanded
+          label: "Validate"
+          onTriggered: root.runAction("validate", card.project.id)
+        }
+        WorkbenchButton {
+          visible: card.expanded && card.hasTrustedFeatures
           label: card.project.projectChecksTrusted ? "Untrust" : "Trust commands"
           onTriggered: root.runAction(card.project.projectChecksTrusted ? "untrust" : "trust", card.project.id)
         }
-        WorkbenchButton { label: "Test"; onTriggered: root.runAction("check", card.project.id) }
         WorkbenchButton {
+          visible: card.expanded
+          label: "Test"
+          onTriggered: root.runAction("check", card.project.id)
+        }
+        WorkbenchButton {
+          visible: card.expanded
           label: Number(card.project.activeTestSessions || 0) > 0 ? "Stop test window" : "Test window"
           onTriggered: root.runAction(
             Number(card.project.activeTestSessions || 0) > 0
               ? "test-session-stop" : "test-session-start",
             card.project.id)
         }
-        WorkbenchButton { label: "Diagnose"; onTriggered: root.runAction("diagnose", card.project.id) }
         WorkbenchButton {
+          visible: card.expanded
+          label: "Diagnose"
+          onTriggered: root.runAction("diagnose", card.project.id)
+        }
+        WorkbenchButton {
+          visible: card.expanded
           label: card.project.securityReviewStatus === "stale" ? "Refresh audit brief" : "Security brief"
           onTriggered: root.runAction("security-review-prepare", card.project.id)
         }
         WorkbenchButton {
+          visible: card.expanded
           label: "Security status"
           onTriggered: root.runAction("security-review-status", card.project.id)
         }
         WorkbenchButton {
-          visible: Number(card.project.securityReviewFindings || 0) > 0
+          visible: card.expanded && Number(card.project.securityReviewFindings || 0) > 0
           label: "Findings (" + Number(card.project.securityReviewFindings || 0) + ")"
           onTriggered: root.runAction("security-review-show", card.project.id)
         }
         WorkbenchButton {
-          visible: card.project.securityReviewStatus !== "incomplete"
+          visible: card.expanded && card.project.securityReviewStatus !== "incomplete"
           label: "Review history"
           onTriggered: root.runAction("security-review-history", card.project.id)
         }
         WorkbenchButton {
-          visible: card.project.securityReviewStatus === "needs-fixes"
+          visible: card.expanded && card.project.securityReviewStatus === "needs-fixes"
             && Number(card.project.securityReviewFindings || 0) > 0
           label: "Start fix session"
           onTriggered: root.runAction("security-remediation-start", card.project.id)
         }
         WorkbenchButton {
-          visible: card.project.securityReviewStatus === "ready"
+          visible: card.expanded && card.project.securityReviewStatus === "ready"
           label: "Security dossier"
           onTriggered: root.runAction("security-review-dossier", card.project.id)
         }
-        WorkbenchButton { label: "Release check"; onTriggered: root.runAction("release-check", card.project.id) }
-        WorkbenchButton { label: "Live link"; onTriggered: root.runAction("link", card.project.id) }
-        WorkbenchButton { label: "Snapshot"; onTriggered: root.runAction("snapshot", card.project.id) }
-        WorkbenchButton { label: "Rollback"; onTriggered: root.runAction("rollback", card.project.id) }
+        WorkbenchButton { visible: card.expanded; label: "Release check"; onTriggered: root.runAction("release-check", card.project.id) }
+        WorkbenchButton { visible: card.expanded; label: "Live link"; onTriggered: root.runAction("link", card.project.id) }
+        WorkbenchButton { visible: card.expanded; label: "Snapshot"; onTriggered: root.runAction("snapshot", card.project.id) }
+        WorkbenchButton { visible: card.expanded; label: "Rollback"; onTriggered: root.runAction("rollback", card.project.id) }
         WorkbenchButton {
+          visible: card.expanded
           label: card.project.enabled === true ? "Disable" : "Enable"
           onTriggered: root.runAction(card.project.enabled === true ? "disable" : "enable", card.project.id)
+        }
+        WorkbenchButton {
+          visible: card.expanded && card.project.deployment !== "not-deployed"
+          label: "Undeploy"
+          onTriggered: root.runAction("undeploy", card.project.id)
+        }
+        WorkbenchButton {
+          visible: card.expanded && card.project.deployment === "not-deployed"
+            && Number(card.project.activeTestSessions || 0) === 0
+          label: "Forget"
+          onTriggered: root.runAction("remove", card.project.id)
         }
       }
     }
