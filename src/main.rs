@@ -318,8 +318,8 @@ fn run(cli: &Cli) -> Result<()> {
             kind,
         } => {
             let scaffold = scaffold::create(path, id, name, kind)?;
-            let project = registry::add_project(&paths, &scaffold.path, None, false)
-                .with_context(|| {
+            let project =
+                registry::add_project(&paths, &scaffold.path, None, false).with_context(|| {
                     format!(
                         "plugin files were created at {}, but registration failed",
                         scaffold.path.display()

@@ -45,7 +45,10 @@ pub fn create(target: &Path, id: &str, name: &str, kind: &str) -> Result<Scaffol
         crate::registry::now_unix()
     ));
     if staging.exists() || staging.is_symlink() {
-        bail!("new plugin staging path already exists: {}", staging.display());
+        bail!(
+            "new plugin staging path already exists: {}",
+            staging.display()
+        );
     }
     fs::create_dir(&staging).context("create new plugin staging directory")?;
     fs::set_permissions(&staging, fs::Permissions::from_mode(0o700))?;
@@ -86,11 +89,7 @@ pub fn create(target: &Path, id: &str, name: &str, kind: &str) -> Result<Scaffol
             b"{\n  \"schemaVersion\": 1,\n  \"pluginPath\": \".\",\n  \"checks\": []\n}\n",
             0o644,
         )?;
-        write_new(
-            &staging.join(".gitignore"),
-            b".DS_Store\n*.log\n",
-            0o644,
-        )?;
+        write_new(&staging.join(".gitignore"), b".DS_Store\n*.log\n", 0o644)?;
         let readme = format!(
             "# {name}\n\nA personal Omarchy {display_kind} plugin created with Plugin Workbench.\n\n## Develop\n\nRegister, validate, live-link and test this checkout from Plugin Workbench.\n"
         );
@@ -193,7 +192,9 @@ fn validate_name(name: &str) -> Result<()> {
     if name.trim() != name
         || name.is_empty()
         || name.len() > 80
-        || name.chars().any(|character| matches!(character, '\n' | '\r'))
+        || name
+            .chars()
+            .any(|character| matches!(character, '\n' | '\r'))
     {
         bail!("plugin name must be 1-80 trimmed characters on one line");
     }
