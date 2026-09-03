@@ -455,7 +455,10 @@ fn new_scaffolds_registers_and_never_overwrites_a_personal_plugin() {
 
     let manifest: Value =
         serde_json::from_slice(&fs::read(target.join("manifest.json")).unwrap()).unwrap();
-    assert_eq!(manifest["kinds"], serde_json::json!(["bar-widget", "panel"]));
+    assert_eq!(
+        manifest["kinds"],
+        serde_json::json!(["bar-widget", "panel"])
+    );
     assert_eq!(
         harness.json(&["status", "--json"])[0]["id"],
         "io.test.personal-panel"
