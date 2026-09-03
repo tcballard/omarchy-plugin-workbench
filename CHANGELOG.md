@@ -2,10 +2,15 @@
 
 ## Unreleased
 
+- Recast the native product as Omarchy Discovery, with apps, plugins, and themes presented as catalogue flavours.
+- Add normalized app catalogue ingestion from `omarchy-apps`, first-party theme discovery, package-aware app state, and native theme application.
+- Split the shell journey into Discover, Installed, Updates, and Build with Ctrl+1/2/3/4 navigation.
+- Keep app installation and updates with Omarchy's package pipeline instead of introducing a second package manager.
+- Rename the helper and package contract to `omarchy-discovery` while retaining the Workbench lifecycle under Build.
 - Reorganise the native panel around Build, Installed, and Discover lifecycle modes with Ctrl+1/2/3 switching and a shared keyboard-scroll model.
 - Inventory every plugin Omarchy discovers and classify first-party, marketplace-managed, direct Git, live-link, and local installations.
 - Add bounded Installed-view enable and disable controls, safe source-aware update actions, and marketplace repair/removal controls.
-- Publish the stable native-panel toggle contract and proposed unclaimed `Super+Alt+P` first-party Omarchy binding without mutating user configuration.
+- Publish the stable native-panel toggle contract and proposed unclaimed `Super+Alt+D` first-party Omarchy binding without mutating user configuration.
 - Add a native New plugin flow with validated Panel, bar-widget, and service starters, atomic no-overwrite creation, Git initialisation, and automatic registration.
 - Give each project one state-aware recommended action while keeping specialist controls behind More actions; add explicit Undeploy and Forget controls.
 - Add Arrow/J/K, Page Up/Down, Home, and End navigation to both virtualized panel feeds.

@@ -5,10 +5,10 @@ import qs.Ui
 
 BarWidget {
   id: root
-  moduleName: "io.github.tcballard.plugin-workbench"
+  moduleName: "io.github.tcballard.discovery"
 
   readonly property string helperPath: {
-    var url = String(Qt.resolvedUrl("bin/omarchy-plugin-workbench"))
+    var url = String(Qt.resolvedUrl("bin/omarchy-discovery"))
     return decodeURIComponent(url.replace(/^file:\/\//, ""))
   }
   readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
@@ -59,9 +59,9 @@ BarWidget {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: panelLoader.item && panelLoader.item.projectCount > 0
-      ? "WB " + panelLoader.item.projectCount : "WB"
-    tooltipText: "Plugin Workbench"
+    text: panelLoader.item && panelLoader.item.availableUpdateCount > 0
+      ? "D " + panelLoader.item.availableUpdateCount : "D"
+    tooltipText: "Discovery"
     onPressed: function(buttonCode) {
       if (buttonCode === Qt.LeftButton) root.toggle()
     }

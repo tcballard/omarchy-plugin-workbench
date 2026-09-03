@@ -14,17 +14,17 @@ Complete this matrix on an actual official x86-64 Omarchy Quattro desktop before
 
 ```bash
 cargo build --workspace --locked --release
-install -m 0755 target/release/omarchy-plugin-workbench bin/omarchy-plugin-workbench-x86_64
+install -m 0755 target/release/omarchy-discovery bin/omarchy-discovery-x86_64
 omarchy plugin validate .
 qmllint -I "$OMARCHY_PATH/shell" BarWidget.qml Panel.qml
 ```
 
 ## Native shell matrix
 
-- Link this checkout under `~/.config/omarchy/plugins/io.github.tcballard.plugin-workbench`.
+- Link this checkout under `~/.config/omarchy/plugins/io.github.tcballard.discovery`.
 - Rescan and enable the widget in the right bar section.
 - Confirm the bar label renders on horizontal and vertical bars.
-- Open by click and `omarchy-shell shell summon io.github.tcballard.plugin-workbench '{}'`.
+- Open by click and `omarchy-shell shell summon io.github.tcballard.discovery '{}'`.
 - Close with Escape, outside click, repeated widget click, and shell hide.
 - Switch directly between Workbench and both neighbouring panels.
 - Confirm keyboard focus returns to the previous application after closing.

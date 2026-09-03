@@ -1,6 +1,11 @@
-# Plugin Workbench for Omarchy
+# Discovery for Omarchy
 
-Plugin Workbench is a native Omarchy Quattro bar panel plus a bounded Rust helper for discovering, installing, developing, and managing shell plugins.
+Discovery is a native Omarchy surface for finding, installing, updating, and building its ecosystem. Apps, plugins, and themes are catalogue flavours rather than separate products; their existing owners still perform every mutation.
+
+- **Apps** install through Arch, AUR, or `omarchy-pkgs` and update with Omarchy.
+- **Plugins** retain reviewed snapshot installation, explicit updates, and repair controls.
+- **Themes** come from the active Omarchy checkout and apply through the normal theme engine.
+- **Build** contains the developer workbench for creating, validating, testing, deploying, and preparing plugins.
 
 Install it directly from GitHub:
 
@@ -11,7 +16,7 @@ omarchy plugin add https://github.com/tcballard/omarchy-plugin-workbench.git --e
 Remove the plugin with:
 
 ```bash
-omarchy plugin remove io.github.tcballard.plugin-workbench
+omarchy plugin remove io.github.tcballard.discovery
 ```
 
 Workbench deliberately leaves its project registry and deployment history behind. To remove that retained local data too, run:
@@ -21,11 +26,12 @@ rm -rf -- "$HOME/.config/omarchy/plugin-workbench" \
   "$HOME/.local/state/omarchy/plugin-workbench"
 ```
 
-The native panel is organised around the plugin lifecycle:
+The native panel is organised around the user journey:
 
+- **Discover** searches normalized app, plugin, and theme catalogues with a dedicated flavour rail.
+- **Installed** shows what Omarchy owns and how it is managed.
+- **Updates** keeps system-owned updates distinct from review-first plugin updates.
 - **Build** creates, links, validates, tests, and prepares personal plugin projects.
-- **Installed** inventories every plugin Omarchy discovers, identifies how it is managed, enables or disables eligible plugins, and offers only safe updates for its source type.
-- **Discover** searches the cached official marketplace catalogue and installs reviewed snapshots.
 
 Build supports these development loops explicitly:
 
@@ -34,11 +40,11 @@ Build supports these development loops explicitly:
 - **Snapshot** copies the plugin into an immutable, content-addressed deployment and atomically switches Omarchy to it. Previous managed deployments remain available for rollback.
 - **Test window** launches a disposable nested Hyprland compositor with an isolated Omarchy shell configuration and a live link to the project.
 
-The workbench does not scan your home directory, execute install hooks, invoke a shell for project checks, use `sudo`, publish plugins, or replace an installation it did not create. Marketplace discovery uses the official published catalogue; update discovery is limited to normal Git checkouts directly beneath Omarchy's documented plugins directory.
+Discovery does not become another package manager. App installation opens Omarchy's existing package flow, themes use Omarchy's theme command, and plugin operations retain the bounded Workbench implementation. Build does not scan your home directory, execute install hooks, invoke a shell for project checks, use `sudo`, publish plugins, or replace an installation it did not create.
 
 ## Status
 
-This repository is a complete `0.2.0` implementation with automated Rust and lifecycle coverage. It is pinned to:
+The `0.3.0` line introduces the Discovery shell and preserves the tested Workbench lifecycle as its Build flavour. It is pinned to:
 
 - Omarchy Quattro contract: `b686ed892d9c3020c3336203f6d34cc75b544e2b`
 - Omarchy plugin manifest schema: `1`
@@ -47,7 +53,7 @@ This repository is a complete `0.2.0` implementation with automated Rust and lif
 
 Native visual and interaction acceptance on a real Omarchy Quattro desktop remains a release gate. See [docs/live-acceptance.md](docs/live-acceptance.md).
 
-The bundled x86-64 helper is byte-reproducible from a pinned Rust/container environment and receives GitHub build-provenance attestations on trusted `main` and version-tag builds. See [the reproduction procedure](docs/reproducible-build.md) and [the 0.2.0 trust-boundary audit](docs/security-audit-0.2.0.md).
+The x86-64 helper is reproducible from a pinned Rust/container environment and release candidates receive build-provenance attestations on version tags. See [the reproduction procedure](docs/reproducible-build.md) and [the 0.2.0 Workbench trust-boundary audit](docs/security-audit-0.2.0.md).
 
 ## What it manages
 
@@ -65,30 +71,41 @@ For each explicitly registered project, Workbench shows:
 
 Available actions include Validate, Security review, Test, Test window, capability workflows, environment diagnostics, isolated sessions, handoffs, evidence, release readiness, Live link, Snapshot, Rollback, Enable, Disable, Undeploy, reviewed installed-plugin updates, Logs, and Doctor.
 
-All three feeds support Arrow Up/Down (or J/K), Page Up/Down, Home, and End. Use Ctrl+1, Ctrl+2, and Ctrl+3 to switch between Build, Installed, and Discover. Project cards lead with one state-aware next action; specialist operations remain under **More actions**.
+Every feed supports Arrow Up/Down (or J/K), Page Up/Down, Home, and End. Use Ctrl+1 through Ctrl+4 for Discover, Installed, Updates, and Build. Project cards lead with one state-aware next action; specialist operations remain under **More actions**.
 
-## Launch the native plugin panel
+## Launch Discovery
 
-Workbench is already a native Omarchy/Quickshell panel rather than a separate desktop application. Its stable shell module id is `io.github.tcballard.plugin-workbench`. Until Omarchy can ship it first-party, add this optional shortcut to `~/.config/hypr/bindings.lua`:
+Discovery is a native Omarchy/Quickshell panel rather than a separate desktop application. Its shell module id is `io.github.tcballard.discovery`. Until Omarchy can ship it first-party, add this optional shortcut to `~/.config/hypr/bindings.lua`:
 
 ```lua
 local o = require("omarchy")
 
 o.bind(
-  "SUPER + ALT + P",
-  "Plugins",
-  "omarchy-shell shell toggle io.github.tcballard.plugin-workbench"
+  "SUPER + ALT + D",
+  "Discovery",
+  "omarchy-shell shell toggle io.github.tcballard.discovery"
 )
 ```
 
-The plugin does not rewrite global keybindings during installation. The current schema-one Omarchy plugin manifest has no keybinding declaration, so the stock `Super+Alt+P` binding belongs in Omarchy itself if Workbench is accepted as a first-party panel. See [the upstream integration contract](docs/omarchy-integration.md).
+The plugin does not rewrite global keybindings during installation. The current schema-one Omarchy plugin manifest has no keybinding declaration, so the stock `Super+Alt+D` binding belongs in Omarchy itself if Discovery is accepted as a first-party panel. See [the upstream integration contract](docs/omarchy-integration.md).
+
+## Search Discovery
+
+Refresh all catalogue sources, then search across every flavour or narrow to one:
+
+```bash
+bin/omarchy-discovery discovery-refresh
+bin/omarchy-discovery discovery-search spreadsheet --flavor app --json
+bin/omarchy-discovery discovery-search --flavor plugin --verified --json
+bin/omarchy-discovery discovery-search --flavor theme --json
+```
 
 ## Create a personal plugin
 
 Use **New plugin** in the panel, or create and register the same safe starter from the CLI:
 
 ```bash
-bin/omarchy-plugin-workbench new /absolute/path/my-plugin \
+bin/omarchy-discovery new /absolute/path/my-plugin \
   --id io.github.you.my-plugin \
   --name "My Plugin" \
   --kind panel
@@ -103,15 +120,15 @@ Open **Marketplace** in the panel to refresh the official catalogue, search loca
 Workbench caches [`https://omarchyplugins.com/catalog.json`](https://omarchyplugins.com/catalog.json) only when you explicitly refresh it. Search then works against that private local cache without a network request:
 
 ```bash
-bin/omarchy-plugin-workbench marketplace-refresh
-bin/omarchy-plugin-workbench marketplace-search clipboard --verified --json
-bin/omarchy-plugin-workbench marketplace-search --category Development --installable
+bin/omarchy-discovery marketplace-refresh
+bin/omarchy-discovery marketplace-search clipboard --verified --json
+bin/omarchy-discovery marketplace-search --category Development --installable
 ```
 
 For an installable community root plugin, search returns its repository and full marketplace-reviewed commit. Installation requires those exact values plus confirmation; Workbench rejects a stale review, checks out the detached commit with Git hooks disabled, validates the manifest internally and through Omarchy, then publishes and optionally enables it:
 
 ```bash
-bin/omarchy-plugin-workbench marketplace-install io.github.example.plugin \
+bin/omarchy-discovery marketplace-install io.github.example.plugin \
   --repo https://github.com/example/plugin \
   --revision FULL_40_CHARACTER_REVIEWED_COMMIT \
   --enable --yes
@@ -122,15 +139,15 @@ The catalogue is public network input protected by HTTPS, not a signed package i
 Workbench records every installation it creates. **Installed** shows the complete host view; **Workbench managed** listings can be updated only to the catalogue's next exact reviewed commit, repaired from that reviewed snapshot, or uninstalled with a recovery copy retained in private state. Marketplace-managed plugins are intentionally excluded from the separate mutable-remote update path.
 
 ```bash
-bin/omarchy-plugin-workbench portfolio
-bin/omarchy-plugin-workbench installed
-bin/omarchy-plugin-workbench installed-disable io.github.example.plugin
-bin/omarchy-plugin-workbench installed-enable io.github.example.plugin
-bin/omarchy-plugin-workbench marketplace-managed
-bin/omarchy-plugin-workbench marketplace-update io.github.example.plugin \
+bin/omarchy-discovery portfolio
+bin/omarchy-discovery installed
+bin/omarchy-discovery installed-disable io.github.example.plugin
+bin/omarchy-discovery installed-enable io.github.example.plugin
+bin/omarchy-discovery marketplace-managed
+bin/omarchy-discovery marketplace-update io.github.example.plugin \
   --revision FULL_REVIEWED_COMMIT --yes
-bin/omarchy-plugin-workbench marketplace-repair io.github.example.plugin --yes
-bin/omarchy-plugin-workbench marketplace-uninstall io.github.example.plugin --yes
+bin/omarchy-discovery marketplace-repair io.github.example.plugin --yes
+bin/omarchy-discovery marketplace-uninstall io.github.example.plugin --yes
 ```
 
 ## Review and apply installed plugin updates
@@ -142,10 +159,10 @@ An update is pinned to the full revision shown during review. Workbench refuses 
 The panel's **Update** and **Update all** buttons carry the reviewed revisions automatically. The CLI keeps that decision explicit:
 
 ```bash
-bin/omarchy-plugin-workbench updates --json
-bin/omarchy-plugin-workbench update io.github.example.plugin \
+bin/omarchy-discovery updates --json
+bin/omarchy-discovery update io.github.example.plugin \
   --revision FULL_40_CHARACTER_OBJECT_ID --yes
-bin/omarchy-plugin-workbench update-all \
+bin/omarchy-discovery update-all \
   --reviewed io.github.example.one=FULL_OBJECT_ID \
   --reviewed io.github.example.two=FULL_OBJECT_ID \
   --yes
@@ -158,7 +175,7 @@ Fetching and updating may contact plugin remotes. Updated plugin code still runs
 ```bash
 cargo build --workspace --locked --release
 sha256sum --check bin/SHA256SUMS
-bin/omarchy-plugin-workbench-x86_64 --version
+bin/omarchy-discovery-x86_64 --version
 
 omarchy plugin validate .
 ```
@@ -168,7 +185,7 @@ omarchy plugin validate .
 From the repository root on an Omarchy machine:
 
 ```bash
-PLUGIN_ID="io.github.tcballard.plugin-workbench"
+PLUGIN_ID="io.github.tcballard.discovery"
 PLUGIN_TARGET="$HOME/.config/omarchy/plugins/$PLUGIN_ID"
 
 ln -s "$PWD" "$PLUGIN_TARGET"
@@ -179,12 +196,12 @@ omarchy plugin enable "$PLUGIN_ID" --section right
 The native panel can register a project by absolute path. The CLI exposes the same workflow:
 
 ```bash
-bin/omarchy-plugin-workbench add /absolute/path/to/a/plugin-project
-bin/omarchy-plugin-workbench list
-bin/omarchy-plugin-workbench validate io.github.example.plugin
-bin/omarchy-plugin-workbench link io.github.example.plugin
-bin/omarchy-plugin-workbench snapshot io.github.example.plugin
-bin/omarchy-plugin-workbench rollback io.github.example.plugin
+bin/omarchy-discovery add /absolute/path/to/a/plugin-project
+bin/omarchy-discovery list
+bin/omarchy-discovery validate io.github.example.plugin
+bin/omarchy-discovery link io.github.example.plugin
+bin/omarchy-discovery snapshot io.github.example.plugin
+bin/omarchy-discovery rollback io.github.example.plugin
 ```
 
 ## Disposable nested test window
@@ -192,9 +209,9 @@ bin/omarchy-plugin-workbench rollback io.github.example.plugin
 On an active Omarchy/Hyprland desktop, launch the registered plugin in a second Hyprland compositor running inside a normal window:
 
 ```bash
-bin/omarchy-plugin-workbench test-session-start io.github.example.plugin
-bin/omarchy-plugin-workbench test-sessions io.github.example.plugin
-bin/omarchy-plugin-workbench test-session-stop io.github.example.plugin
+bin/omarchy-discovery test-session-start io.github.example.plugin
+bin/omarchy-discovery test-sessions io.github.example.plugin
+bin/omarchy-discovery test-session-stop io.github.example.plugin
 ```
 
 The panel exposes the same lifecycle as **Test window** / **Stop test window**. The nested shell gets a private temporary HOME plus private XDG config, cache, state, and data directories. Its `shell.json` disables first-party non-bar plugins, turns off idle locking, and enables the project plugin. Bar widgets and replacement bars appear in the nested bar; panels, overlays, and menus are summoned after startup. The project source is live-linked, so Quickshell sees edits while the window is open.
@@ -206,7 +223,7 @@ This is process and configuration isolation, not a VM, container, or security sa
 If a plugin lives in a subdirectory that is not `omarchy-plugin/`, specify it:
 
 ```bash
-bin/omarchy-plugin-workbench add /path/to/project --plugin-path packaging/omarchy
+bin/omarchy-discovery add /path/to/project --plugin-path packaging/omarchy
 ```
 
 ## Portable project contract
@@ -248,11 +265,11 @@ This file contains shared project facts, never agent-specific configuration. Cod
 Registration reads declared commands but does not trust or run them. Review the file, then make trust and workflow-capability decisions explicitly:
 
 ```bash
-bin/omarchy-plugin-workbench trust io.github.example.plugin
-bin/omarchy-plugin-workbench check io.github.example.plugin
-bin/omarchy-plugin-workbench environment io.github.example.plugin
-bin/omarchy-plugin-workbench approve io.github.example.plugin preview
-bin/omarchy-plugin-workbench workflow io.github.example.plugin preview
+bin/omarchy-discovery trust io.github.example.plugin
+bin/omarchy-discovery check io.github.example.plugin
+bin/omarchy-discovery environment io.github.example.plugin
+bin/omarchy-discovery approve io.github.example.plugin preview
+bin/omarchy-discovery workflow io.github.example.plugin preview
 ```
 
 Trust is bound to the exact SHA-256 of `.omarchy-workbench.json`; editing it invalidates executable trust. Commands run without an inserted shell, with null stdin, a fresh process group, a declared timeout, and bounded captured output. They still execute with your user permissions and must be treated as arbitrary project code. Capability approval is a local policy gate, not an operating-system sandbox.
@@ -260,7 +277,7 @@ Trust is bound to the exact SHA-256 of `.omarchy-workbench.json`; editing it inv
 After intentionally editing the definition, reload it before reviewing and trusting the new command set. Refresh revokes prior command trust and every capability approval:
 
 ```bash
-bin/omarchy-plugin-workbench refresh io.github.example.plugin
+bin/omarchy-discovery refresh io.github.example.plugin
 ```
 
 ## Parallel agent sessions and handoffs
@@ -268,19 +285,19 @@ bin/omarchy-plugin-workbench refresh io.github.example.plugin
 Create one isolated Git worktree and `codex/*` branch per task. The optional agent label is local session metadata only and never enters the project contract:
 
 ```bash
-bin/omarchy-plugin-workbench session-start io.github.example.plugin \
+bin/omarchy-discovery session-start io.github.example.plugin \
   --task repair-preview --agent opencode \
   --objective "Repair preview startup without changing the plugin contract"
-bin/omarchy-plugin-workbench sessions io.github.example.plugin
+bin/omarchy-discovery sessions io.github.example.plugin
 ```
 
 Workbench refuses to create a session from a dirty source checkout. Closing a session is deliberately non-destructive: it marks the record closed but retains the branch and worktree.
 
 ```bash
-bin/omarchy-plugin-workbench handoff SESSION_ID \
+bin/omarchy-discovery handoff SESSION_ID \
   --decision "Keep startup agent-neutral" \
   --next-action "Run project checks"
-bin/omarchy-plugin-workbench session-close SESSION_ID
+bin/omarchy-discovery session-close SESSION_ID
 ```
 
 Handoffs capture the objective, decisions, blockers, next action, branch, worktree, revision, and dirty state in private local state.
@@ -290,9 +307,9 @@ Handoffs capture the objective, decisions, blockers, next action, branch, worktr
 Checks, workflows, environment probes, and release preflights append bounded structured records to the per-project evidence ledger. Release readiness is read-only: it checks validation, clean Git state, changelog/version agreement, clean passing evidence for the current revision, and open sessions. It never tags, pushes, publishes, or closes sessions.
 
 ```bash
-bin/omarchy-plugin-workbench diagnose io.github.example.plugin
-bin/omarchy-plugin-workbench evidence io.github.example.plugin --limit 20
-bin/omarchy-plugin-workbench release-check io.github.example.plugin
+bin/omarchy-discovery diagnose io.github.example.plugin
+bin/omarchy-discovery evidence io.github.example.plugin --limit 20
+bin/omarchy-discovery release-check io.github.example.plugin
 ```
 
 ## Exact-commit security review
@@ -300,7 +317,7 @@ bin/omarchy-plugin-workbench release-check io.github.example.plugin
 Security review is a separate lifecycle stage from executable validation and testing. Workbench prepares a private brief and bounded static inventory at one clean, exact Git commit without running plugin code, tests, builds, examples, installers, hooks, workflows, privileged commands, or bundled binaries:
 
 ```bash
-bin/omarchy-plugin-workbench security-review-prepare io.github.example.plugin
+bin/omarchy-discovery security-review-prepare io.github.example.plugin
 ```
 
 The generated brief applies the Omarchy marketplace maintainer method across process execution, filesystem boundaries, network and external content, QML sinks, IPC and privileges, secrets, agent/tool configuration, dependencies, workflows, releases, updates, and executable provenance. Its inventory is navigation evidence, not a clean scan or safety conclusion.
@@ -308,9 +325,9 @@ The generated brief applies the Omarchy marketplace maintainer method across pro
 The reviewer returns one schema-one JSON object in their final response. After inspecting it, import it with an explicit manual-review confirmation:
 
 ```bash
-bin/omarchy-plugin-workbench security-review-import io.github.example.plugin \
+bin/omarchy-discovery security-review-import io.github.example.plugin \
   --file /path/to/review.json --confirm-manual-review
-bin/omarchy-plugin-workbench security-review-status io.github.example.plugin
+bin/omarchy-discovery security-review-status io.github.example.plugin
 ```
 
 Workbench accepts `ready`, `needs-fixes`, or `incomplete` and derives `stale` whenever the worktree becomes dirty or moves away from the reviewed commit. A `Ready` report cannot retain blockers or unresolved critical/high/medium findings, and it must account for every detected executable artifact with reviewable source or provenance evidence. The report contract is published at [`contracts/security-review.schema.json`](contracts/security-review.schema.json).
@@ -318,29 +335,29 @@ Workbench accepts `ready`, `needs-fixes`, or `incomplete` and derives `stale` wh
 After remediation, prepare a fix-verification brief against the latest imported findings and the new exact commit:
 
 ```bash
-bin/omarchy-plugin-workbench security-review-prepare io.github.example.plugin --verify-fixes
+bin/omarchy-discovery security-review-prepare io.github.example.plugin --verify-fixes
 ```
 
 Review evidence remains inspectable instead of being collapsed into one status flag. History preserves every imported exact-commit result, while `show` returns the complete latest report or the latest report at a named full revision:
 
 ```bash
-bin/omarchy-plugin-workbench security-review-history io.github.example.plugin
-bin/omarchy-plugin-workbench security-review-show io.github.example.plugin
-bin/omarchy-plugin-workbench security-review-show io.github.example.plugin \
+bin/omarchy-discovery security-review-history io.github.example.plugin
+bin/omarchy-discovery security-review-show io.github.example.plugin
+bin/omarchy-discovery security-review-show io.github.example.plugin \
   --revision FULL_40_CHARACTER_REVIEWED_COMMIT
 ```
 
 When a current review has findings, Workbench can turn all findings—or selected ids—into one private remediation brief and isolated Git worktree. The source checkout remains untouched and publication is excluded from the generated objective:
 
 ```bash
-bin/omarchy-plugin-workbench security-remediation-start io.github.example.plugin \
+bin/omarchy-discovery security-remediation-start io.github.example.plugin \
   --finding SEC-001 --agent codex
 ```
 
 After a current review reaches `Ready`, generate a shareable Markdown and JSON dossier containing the plugin identity, exact reviewed commit, review-record digest, findings, executable provenance and current-revision Workbench evidence:
 
 ```bash
-bin/omarchy-plugin-workbench security-review-dossier io.github.example.plugin
+bin/omarchy-discovery security-review-dossier io.github.example.plugin
 ```
 
 The dossier is written to private state and is not uploaded or attached automatically. It becomes stale with the review as soon as the source moves.
@@ -352,8 +369,8 @@ Release and marketplace submission preparation require a current `Ready` manual 
 `release-plan` converts passing readiness evidence into an owner-only JSON plan containing the exact current revision, tag and reviewable argv arrays. It does not execute them. `submission-prepare` validates the root layout, README, licence, category, one-to-three official tags, cached ID/repository collisions and explicit confirmation of the five official checklist statements, then writes the current official issue body and matching exact-commit security dossier without creating a public issue.
 
 ```bash
-bin/omarchy-plugin-workbench release-plan io.github.example.plugin
-bin/omarchy-plugin-workbench submission-prepare io.github.example.plugin \
+bin/omarchy-discovery release-plan io.github.example.plugin
+bin/omarchy-discovery submission-prepare io.github.example.plugin \
   --repo https://github.com/example/plugin \
   --category "Developer Tools" --tag quickshell --tag bar \
   --confirm-checklist
@@ -419,7 +436,7 @@ and exit non-zero. This is the interface used by the QML panel.
 cargo fmt --all -- --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test --all-targets --all-features
-bash -n bin/omarchy-plugin-workbench scripts/validate.sh
+bash -n bin/omarchy-discovery scripts/validate.sh
 scripts/validate.sh
 ```
 
