@@ -429,6 +429,56 @@ fn register_link_snapshot_rollback_and_undeploy() {
 }
 
 #[test]
+fn new_scaffolds_registers_and_never_overwrites_a_personal_plugin() {
+    let harness = Harness::new();
+    let target = harness.root.path().join("personal-panel");
+    let target_text = target.to_string_lossy().into_owned();
+    let created = harness.json(&[
+        "new",
+        &target_text,
+        "--id",
+        "io.test.personal-panel",
+        "--name",
+        "Personal Panel",
+        "--kind",
+        "panel",
+        "--json",
+    ]);
+    assert_eq!(created["ok"], true);
+    assert_eq!(created["action"], "new");
+    assert_eq!(created["project"]["id"], "io.test.personal-panel");
+    assert_eq!(created["scaffold"]["kind"], "panel");
+    assert!(target.join("manifest.json").is_file());
+    assert!(target.join("BarWidget.qml").is_file());
+    assert!(target.join("Panel.qml").is_file());
+    assert!(target.join(".git").is_dir());
+
+    let manifest: Value =
+        serde_json::from_slice(&fs::read(target.join("manifest.json")).unwrap()).unwrap();
+    assert_eq!(manifest["kinds"], serde_json::json!(["bar-widget", "panel"]));
+    assert_eq!(
+        harness.json(&["status", "--json"])[0]["id"],
+        "io.test.personal-panel"
+    );
+
+    fs::write(target.join("README.md"), "keep my work").unwrap();
+    let refused = harness.run(&[
+        "new",
+        &target_text,
+        "--id",
+        "io.test.replacement",
+        "--name",
+        "Replacement",
+        "--json",
+    ]);
+    assert!(!refused.status.success());
+    assert_eq!(
+        fs::read_to_string(target.join("README.md")).unwrap(),
+        "keep my work"
+    );
+}
+
+#[test]
 fn refuses_to_replace_an_unmanaged_install() {
     let harness = Harness::new();
     let project = harness.project.to_string_lossy().into_owned();
