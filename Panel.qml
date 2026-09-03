@@ -15,8 +15,11 @@ Panel {
   property string helperPath: ""
   property var projects: []
   property var pluginUpdates: []
+  property var installedPlugins: []
+  property string installedQuery: ""
   property bool updatesChecked: false
-  property bool marketplaceOpen: false
+  property bool portfolioLoaded: false
+  property string viewMode: "build"
   property bool marketplaceLoaded: false
   property var marketplaceResults: []
   property int marketplaceMatched: 0
@@ -30,6 +33,7 @@ Panel {
   property string message: ""
   property bool messageError: false
   property string refreshOutput: ""
+  property string portfolioOutput: ""
   property string actionOutput: ""
   property string actionError: ""
   property bool showBuilderSetup: false
@@ -37,9 +41,35 @@ Panel {
   property string newPluginKind: "panel"
   property string pendingAction: ""
   readonly property int projectCount: projects.length
+  readonly property bool buildOpen: viewMode === "build"
+  readonly property bool installedOpen: viewMode === "installed"
+  readonly property bool marketplaceOpen: viewMode === "discover"
   readonly property int availableUpdateCount: pluginUpdates.filter(function(plugin) { return plugin.updateable }).length
   readonly property var reviewUpdates: pluginUpdates.filter(function(plugin) { return plugin.state !== "up-to-date" })
-  readonly property bool busy: refreshProcess.running || actionProcess.running
+  readonly property var installedRows: installedPlugins.map(function(plugin) {
+    var update = null
+    for (var index = 0; index < pluginUpdates.length; index += 1) {
+      if (pluginUpdates[index].id === plugin.id) {
+        update = pluginUpdates[index]
+        break
+      }
+    }
+    return { plugin: plugin, update: update }
+  })
+  readonly property int installedCount: installedRows.length
+  readonly property var visibleInstalledRows: installedRows.filter(function(row) {
+    var query = root.installedQuery.trim().toLowerCase()
+    if (!query) return true
+    var plugin = row.plugin
+    return String(plugin.name || "").toLowerCase().indexOf(query) !== -1
+      || String(plugin.id || "").toLowerCase().indexOf(query) !== -1
+      || String(plugin.management || "").toLowerCase().indexOf(query) !== -1
+  })
+  readonly property bool busy: refreshProcess.running || portfolioProcess.running || actionProcess.running
+  readonly property color surfaceSubtle: Qt.rgba(root.barForeground.r, root.barForeground.g, root.barForeground.b, 0.055)
+  readonly property color borderSubtle: Qt.rgba(root.barForeground.r, root.barForeground.g, root.barForeground.b, 0.16)
+  readonly property color textMuted: Qt.rgba(root.barForeground.r, root.barForeground.g, root.barForeground.b, 0.58)
+  readonly property color accentWash: Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.14)
 
   function open() {
     root.controller.show()
@@ -68,6 +98,46 @@ Panel {
     refreshProcess.running = true
   }
 
+  function refreshView() {
+    if (root.buildOpen) refresh()
+    else if (root.installedOpen) refreshInstalled()
+    else refreshMarketplace()
+  }
+
+  function setViewMode(mode) {
+    if (root.busy || root.viewMode === mode) return
+    root.viewMode = mode
+    root.marketplaceConfirmation = ""
+    if (mode === "installed") refreshInstalled()
+    else if (mode === "discover") {
+      if (root.marketplaceLoaded) searchMarketplace()
+      else refreshMarketplace()
+    } else refresh()
+  }
+
+  function refreshInstalled() {
+    checkUpdates()
+    loadPortfolio()
+  }
+
+  function loadPortfolio() {
+    if (!root.helperPath || portfolioProcess.running) return
+    root.portfolioOutput = ""
+    portfolioProcess.command = [root.helperPath, "installed", "--json"]
+    portfolioProcess.running = true
+  }
+
+  function applyPortfolio() {
+    try {
+      var parsed = JSON.parse(root.portfolioOutput || "{}")
+      root.installedPlugins = Array.isArray(parsed.plugins) ? parsed.plugins : []
+      root.portfolioLoaded = true
+    } catch (error) {
+      root.message = "Could not parse installed plugin portfolio: " + error
+      root.messageError = true
+    }
+  }
+
   function applyRefresh() {
     try {
       var parsed = JSON.parse(root.refreshOutput || "[]")
@@ -90,6 +160,17 @@ Panel {
     root.messageError = false
     root.pendingAction = "project"
     actionProcess.command = [root.helperPath, action, projectId, "--json"]
+    actionProcess.running = true
+  }
+
+  function runInstalledAction(action, pluginId) {
+    if (root.busy || !root.helperPath) return
+    root.actionOutput = ""
+    root.actionError = ""
+    root.message = (action === "installed-enable" ? "Enabling " : "Disabling ") + pluginId + "…"
+    root.messageError = false
+    root.pendingAction = "installed"
+    actionProcess.command = [root.helperPath, action, pluginId, "--json"]
     actionProcess.running = true
   }
 
@@ -121,7 +202,8 @@ Panel {
   }
 
   function activeFeed() {
-    return root.marketplaceOpen ? marketplaceList : projectList
+    return root.marketplaceOpen ? marketplaceList
+      : root.installedOpen ? installedList : projectList
   }
 
   function scrollFeed(amount) {
@@ -183,14 +265,6 @@ Panel {
     }).join("\n") + (commits.length > 5 ? "\n…" : "")
   }
 
-  function toggleMarketplace() {
-    root.marketplaceOpen = !root.marketplaceOpen
-    if (root.marketplaceOpen) {
-      if (root.marketplaceLoaded) searchMarketplace()
-      else refreshMarketplace()
-    }
-  }
-
   function refreshMarketplace() {
     if (root.busy || !root.helperPath) return
     root.actionOutput = ""
@@ -246,17 +320,28 @@ Panel {
     actionProcess.running = true
   }
 
+  function updateManagedPlugin(plugin) {
+    if (root.busy || !root.helperPath || !plugin.updateAvailable || !plugin.catalogueRevision) return
+    root.pendingAction = "marketplace-update"
+    root.message = "Applying reviewed marketplace update for " + plugin.id + "…"
+    root.messageError = false
+    actionProcess.command = [root.helperPath, "marketplace-update", plugin.id,
+      "--revision", plugin.catalogueRevision, "--yes", "--json"]
+    actionProcess.running = true
+  }
+
   function confirmedMarketplaceAction(action, plugin) {
     var key = action + ":" + plugin.id
+    var displayName = plugin.name || plugin.id
     if (root.marketplaceConfirmation !== key) {
       root.marketplaceConfirmation = key
-      root.message = "Click “Confirm " + action + "” again for " + plugin.name
+      root.message = "Click “Confirm " + action + "” again for " + displayName
       root.messageError = false
       return
     }
     root.marketplaceConfirmation = ""
     root.pendingAction = "marketplace-" + action
-    root.message = (action === "repair" ? "Repairing " : "Uninstalling ") + plugin.name + "…"
+    root.message = (action === "repair" ? "Repairing " : "Uninstalling ") + displayName + "…"
     actionProcess.command = [root.helperPath, "marketplace-" + action, plugin.id, "--yes", "--json"]
     actionProcess.running = true
   }
@@ -306,8 +391,12 @@ Panel {
         newIdInput.text = ""
         newPathInput.text = ""
       }
-      if (root.pendingAction === "update") Qt.callLater(root.checkUpdates)
-      else if (root.pendingAction.indexOf("marketplace-") === 0) Qt.callLater(root.searchMarketplace)
+      if (root.pendingAction === "update") Qt.callLater(root.refreshInstalled)
+      else if (root.pendingAction === "installed") Qt.callLater(root.refreshInstalled)
+      else if (root.pendingAction.indexOf("marketplace-") === 0) {
+        if (root.marketplaceOpen) Qt.callLater(root.searchMarketplace)
+        else Qt.callLater(root.refreshInstalled)
+      }
       else Qt.callLater(root.refresh)
     }
     root.pendingAction = ""
@@ -333,6 +422,31 @@ Panel {
       if (exitCode === 0) Qt.callLater(root.applyRefresh)
       else {
         root.message = root.message || "Workbench helper could not load projects"
+        root.messageError = true
+      }
+    }
+  }
+
+  Process {
+    id: portfolioProcess
+    command: []
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.portfolioOutput = String(text || "")
+    }
+    stderr: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        if (String(text || "").trim()) {
+          root.message = String(text).trim()
+          root.messageError = true
+        }
+      }
+    }
+    onExited: function(exitCode) {
+      if (exitCode === 0) Qt.callLater(root.applyPortfolio)
+      else {
+        root.message = root.message || "Installed plugin portfolio could not be loaded"
         root.messageError = true
       }
     }
@@ -369,8 +483,15 @@ Panel {
       onCloseRequested: root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
       Keys.onPressed: function(event) {
-        if (event.modifiers !== Qt.NoModifier) return
-        if (event.key === Qt.Key_Down || event.key === Qt.Key_J) {
+        if (event.modifiers === Qt.ControlModifier && event.key === Qt.Key_1) {
+          root.setViewMode("build")
+        } else if (event.modifiers === Qt.ControlModifier && event.key === Qt.Key_2) {
+          root.setViewMode("installed")
+        } else if (event.modifiers === Qt.ControlModifier && event.key === Qt.Key_3) {
+          root.setViewMode("discover")
+        } else if (event.modifiers !== Qt.NoModifier) {
+          return
+        } else if (event.key === Qt.Key_Down || event.key === Qt.Key_J) {
           root.scrollFeed(Style.space(56))
         } else if (event.key === Qt.Key_Up || event.key === Qt.Key_K) {
           root.scrollFeed(-Style.space(56))
@@ -402,21 +523,22 @@ Panel {
             spacing: Style.space(8)
 
             Column {
-              width: parent.width - marketplaceButton.width - refreshButton.width - updatesButton.width - Style.space(24)
+              width: parent.width - refreshButton.width - Style.space(8)
               spacing: Style.space(2)
 
               Text {
-                text: "PLUGIN WORKBENCH"
+                text: "OMARCHY PLUGINS"
                 color: root.barForeground
                 font.family: root.bar ? root.bar.fontFamily : Style.font.family
                 font.pixelSize: Style.font.title
                 font.bold: true
               }
               Text {
-                text: root.marketplaceOpen
-                  ? root.marketplaceMatched + " of " + root.marketplaceTotal + " marketplace listings · ↑↓ scroll"
-                  : root.projectCount + (root.projectCount === 1 ? " registered project" : " registered projects")
-                    + " · ↑↓ scroll"
+                text: root.buildOpen
+                  ? "Build and test personal plugins without leaving the shell"
+                  : root.installedOpen
+                    ? root.installedCount + " plugins discovered by Omarchy"
+                    : root.marketplaceMatched + " of " + root.marketplaceTotal + " official catalogue listings"
                 color: Qt.rgba(root.barForeground.r, root.barForeground.g, root.barForeground.b, 0.62)
                 font.family: root.bar ? root.bar.fontFamily : Style.font.family
                 font.pixelSize: Style.font.caption
@@ -424,29 +546,46 @@ Panel {
             }
 
             WorkbenchButton {
-              id: marketplaceButton
-              label: root.marketplaceOpen ? "Projects" : "Marketplace"
-              enabled: !root.busy
-              onTriggered: root.toggleMarketplace()
-            }
-            WorkbenchButton {
-              id: updatesButton
-              visible: !root.marketplaceOpen
-              label: root.availableUpdateCount > 0 ? root.availableUpdateCount + " updates" : "Check updates"
-              enabled: !root.busy
-              onTriggered: root.checkUpdates()
-            }
-
-            WorkbenchButton {
               id: refreshButton
               label: root.busy ? "Working…" : "Refresh"
               enabled: !root.busy
-              onTriggered: root.refresh()
+              onTriggered: root.refreshView()
+            }
+          }
+
+          Row {
+            id: lifecycleRail
+            width: parent.width
+            height: Style.space(48)
+            spacing: Style.space(6)
+
+            ModeTab {
+              width: (lifecycleRail.width - Style.space(12)) / 3
+              title: "1  BUILD"
+              detail: root.projectCount + (root.projectCount === 1 ? " project" : " projects")
+              active: root.buildOpen
+              onTriggered: root.setViewMode("build")
+            }
+            ModeTab {
+              width: (lifecycleRail.width - Style.space(12)) / 3
+              title: "2  INSTALLED"
+              detail: root.availableUpdateCount > 0
+                ? root.availableUpdateCount + " updates ready" : root.installedCount + " installed"
+              active: root.installedOpen
+              onTriggered: root.setViewMode("installed")
+            }
+            ModeTab {
+              width: (lifecycleRail.width - Style.space(12)) / 3
+              title: "3  DISCOVER"
+              detail: root.marketplaceLoaded
+                ? root.marketplaceTotal + " official listings" : "Official catalogue"
+              active: root.marketplaceOpen
+              onTriggered: root.setViewMode("discover")
             }
           }
 
           Rectangle {
-            visible: !root.marketplaceOpen
+            visible: root.buildOpen
             width: parent.width
             height: visible ? (root.createProjectOpen ? Style.space(124) : Style.space(82)) : 0
             color: "transparent"
@@ -598,6 +737,56 @@ Panel {
             }
           }
 
+          Rectangle {
+            visible: root.installedOpen
+            width: parent.width
+            height: visible ? Style.space(76) : 0
+            color: Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.08)
+            border.color: Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.28)
+            border.width: 1
+            radius: Style.cornerRadius
+
+            Column {
+              anchors.fill: parent
+              anchors.margins: Style.space(8)
+              spacing: Style.space(6)
+
+              Text {
+                text: root.availableUpdateCount > 0
+                  ? root.availableUpdateCount + " reviewed update(s) ready · updates are never unattended"
+                  : root.updatesChecked ? "Installed plugins are current" : "Review installed plugin state"
+                color: root.barForeground
+                font.family: root.bar ? root.bar.fontFamily : Style.font.family
+                font.pixelSize: Style.font.caption
+                font.bold: true
+              }
+
+              Row {
+                width: parent.width
+                spacing: Style.space(8)
+                WorkbenchField {
+                  id: installedSearchInput
+                  width: parent.width - installedUpdateAll.width - installedCheck.width - Style.space(16)
+                  placeholder: "Search installed plugins or management source"
+                  onTextChanged: root.installedQuery = text
+                }
+                WorkbenchButton {
+                  id: installedUpdateAll
+                  visible: root.availableUpdateCount > 0
+                  label: "Update all"
+                  enabled: !root.busy
+                  onTriggered: root.applyAllUpdates()
+                }
+                WorkbenchButton {
+                  id: installedCheck
+                  label: "Check"
+                  enabled: !root.busy
+                  onTriggered: root.refreshInstalled()
+                }
+              }
+            }
+          }
+
           Row {
             visible: root.marketplaceOpen
             height: visible ? implicitHeight : 0
@@ -698,78 +887,61 @@ Panel {
             }
 
             ListView {
+              id: installedList
+              anchors.fill: parent
+              visible: root.installedOpen
+              clip: true
+              spacing: Style.space(8)
+              boundsBehavior: Flickable.StopAtBounds
+              reuseItems: true
+              cacheBuffer: height
+              model: root.visibleInstalledRows
+
+              delegate: InstalledCard {
+                required property var modelData
+                width: installedList.width
+                row: modelData
+              }
+            }
+
+            Column {
+              visible: root.installedOpen && root.portfolioLoaded && root.updatesChecked
+                && root.visibleInstalledRows.length === 0
+              anchors.left: parent.left
+              anchors.right: parent.right
+              anchors.top: parent.top
+              anchors.topMargin: Style.space(48)
+              spacing: Style.space(8)
+
+              Text {
+                width: parent.width
+                text: root.installedQuery ? "No installed plugins match" : "No installed plugins found"
+                color: root.barForeground
+                font.family: root.bar ? root.bar.fontFamily : Style.font.family
+                font.pixelSize: Style.font.body
+                font.bold: true
+                horizontalAlignment: Text.AlignHCenter
+              }
+              Text {
+                width: parent.width
+                text: "Refresh the shell inventory, install from Discover, or link a project from Build."
+                color: Qt.rgba(root.barForeground.r, root.barForeground.g, root.barForeground.b, 0.58)
+                font.family: root.bar ? root.bar.fontFamily : Style.font.family
+                font.pixelSize: Style.font.body
+                horizontalAlignment: Text.AlignHCenter
+              }
+            }
+
+            ListView {
               id: projectList
               anchors.fill: parent
-              visible: !root.marketplaceOpen
+              visible: root.buildOpen
               clip: true
               spacing: Style.space(8)
               boundsBehavior: Flickable.StopAtBounds
               reuseItems: true
               cacheBuffer: height
               model: root.projects
-
-              header: Rectangle {
-                visible: root.updatesChecked
-                width: projectList.width
-                height: visible ? updateContent.implicitHeight + Style.space(20) : 0
-                color: Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.08)
-                radius: Style.cornerRadius
-                border.color: Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.28)
-                border.width: 1
-
-                Column {
-                  id: updateContent
-                  anchors.left: parent.left
-                  anchors.right: parent.right
-                  anchors.top: parent.top
-                  anchors.margins: Style.space(10)
-                  spacing: Style.space(8)
-
-                  Row {
-                    width: parent.width
-                    spacing: Style.space(8)
-
-                    Column {
-                      width: parent.width - updateAllButton.width - Style.space(8)
-                      spacing: Style.space(2)
-                      Text {
-                        text: "INSTALLED PLUGIN UPDATES"
-                        color: root.barForeground
-                        font.family: root.bar ? root.bar.fontFamily : Style.font.family
-                        font.pixelSize: Style.font.body
-                        font.bold: true
-                      }
-                      Text {
-                        text: root.availableUpdateCount > 0
-                          ? root.availableUpdateCount + " fast-forward update(s) ready after review"
-                          : root.reviewUpdates.length > 0
-                            ? root.reviewUpdates.length + " plugin(s) need attention"
-                            : "All Git-managed plugins are up to date"
-                        color: Qt.rgba(root.barForeground.r, root.barForeground.g, root.barForeground.b, 0.58)
-                        font.family: root.bar ? root.bar.fontFamily : Style.font.family
-                        font.pixelSize: Style.font.caption
-                      }
-                    }
-
-                    WorkbenchButton {
-                      id: updateAllButton
-                      visible: root.availableUpdateCount > 0
-                      label: "Update all"
-                      enabled: !root.busy
-                      onTriggered: root.applyAllUpdates()
-                    }
-                  }
-
-                  Repeater {
-                    model: root.reviewUpdates
-                    delegate: UpdateCard {
-                      required property var modelData
-                      width: updateContent.width
-                      update: modelData
-                    }
-                  }
-                }
-              }
 
               delegate: ProjectCard {
                 required property var modelData
@@ -840,9 +1012,12 @@ Panel {
     id: actionButton
     property string label: ""
     signal triggered()
+    activeFocusOnTab: true
     implicitWidth: buttonLabel.implicitWidth + Style.space(18)
     implicitHeight: Style.space(28)
     radius: Style.cornerRadius
+    border.color: activeFocus ? Color.accent : "transparent"
+    border.width: 1
     color: buttonHover.hovered
       ? Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.30)
       : Qt.rgba(root.barForeground.r, root.barForeground.g, root.barForeground.b, 0.09)
@@ -859,7 +1034,75 @@ Panel {
       font.bold: true
     }
     HoverHandler { id: buttonHover }
-    TapHandler { enabled: actionButton.enabled; onTapped: actionButton.triggered() }
+    Keys.onPressed: function(event) {
+      if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+        actionButton.triggered()
+        event.accepted = true
+      } else event.accepted = false
+    }
+    TapHandler {
+      enabled: actionButton.enabled
+      onTapped: {
+        actionButton.forceActiveFocus()
+        actionButton.triggered()
+      }
+    }
+  }
+
+  component ModeTab: Rectangle {
+    id: modeTab
+    property string title: ""
+    property string detail: ""
+    property bool active: false
+    signal triggered()
+    activeFocusOnTab: true
+    implicitHeight: Style.space(48)
+    color: modeTap.pressed
+      ? Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.30)
+      : modeHover.hovered ? Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.22)
+      : active ? root.accentWash : root.surfaceSubtle
+    border.color: activeFocus ? Color.accent
+      : active ? Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.46) : root.borderSubtle
+    border.width: 1
+    radius: Style.cornerRadius
+
+    Column {
+      anchors.centerIn: parent
+      spacing: Style.space(2)
+      Text {
+        anchors.horizontalCenter: parent.horizontalCenter
+        text: modeTab.title
+        textFormat: Text.PlainText
+        color: modeTab.active ? Color.accent : root.barForeground
+        font.family: root.bar ? root.bar.fontFamily : Style.font.family
+        font.pixelSize: Style.font.caption
+        font.bold: true
+      }
+      Text {
+        anchors.horizontalCenter: parent.horizontalCenter
+        text: modeTab.detail
+        textFormat: Text.PlainText
+        color: root.textMuted
+        font.family: root.bar ? root.bar.fontFamily : Style.font.family
+        font.pixelSize: Style.font.caption
+      }
+    }
+
+    Keys.onPressed: function(event) {
+      if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+        modeTab.triggered()
+        event.accepted = true
+      } else event.accepted = false
+    }
+    HoverHandler { id: modeHover }
+    TapHandler {
+      id: modeTap
+      enabled: !root.busy
+      onTapped: {
+        modeTab.forceActiveFocus()
+        modeTab.triggered()
+      }
+    }
   }
 
   component WorkbenchField: Rectangle {
@@ -895,6 +1138,154 @@ Panel {
         textFormat: Text.PlainText
         color: Qt.rgba(root.barForeground.r, root.barForeground.g, root.barForeground.b, 0.42)
         font: fieldInput.font
+      }
+    }
+  }
+
+  component InstalledCard: Rectangle {
+    id: installedCard
+    required property var row
+    readonly property var plugin: row.plugin
+    readonly property var update: row.update
+    readonly property bool marketplaceManaged: plugin.management === "marketplace"
+    readonly property bool updateReady: marketplaceManaged
+      ? Boolean(plugin.updateAvailable) : Boolean(update && update.updateable)
+    readonly property string state: marketplaceManaged
+      ? String(plugin.managedState || "current")
+      : update ? String(update.state || "unknown")
+      : Boolean(plugin.enabled) ? "enabled" : "disabled"
+    readonly property bool healthy: state === "up-to-date" || state === "current"
+      || state === "enabled" || state === "disabled"
+    readonly property string sourceLabel: plugin.management === "first-party" ? "OMARCHY"
+      : plugin.management === "marketplace" ? "MARKETPLACE MANAGED"
+      : plugin.management === "live-link" ? "LIVE DEVELOPMENT LINK"
+      : plugin.management === "git" ? "DIRECT GIT CHECKOUT"
+      : "LOCAL PLUGIN"
+    implicitHeight: installedContent.implicitHeight + Style.space(18)
+    color: root.surfaceSubtle
+    radius: Style.cornerRadius
+    border.color: updateReady
+      ? Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.48)
+      : healthy ? root.borderSubtle : Qt.rgba(Color.urgent.r, Color.urgent.g, Color.urgent.b, 0.42)
+    border.width: 1
+
+    Column {
+      id: installedContent
+      anchors.left: parent.left
+      anchors.right: parent.right
+      anchors.top: parent.top
+      anchors.margins: Style.space(9)
+      spacing: Style.space(5)
+
+      Row {
+        width: parent.width
+        spacing: Style.space(8)
+
+        Column {
+          width: parent.width - installedActions.width - Style.space(8)
+          spacing: Style.space(2)
+          Text {
+            width: parent.width
+            text: installedCard.plugin.name || installedCard.plugin.id
+            textFormat: Text.PlainText
+            color: root.barForeground
+            font.family: root.bar ? root.bar.fontFamily : Style.font.family
+            font.pixelSize: Style.font.body
+            font.bold: true
+            elide: Text.ElideRight
+          }
+          Text {
+            width: parent.width
+            text: installedCard.sourceLabel
+              + "  ·  " + installedCard.state.replace(/-/g, " ").toUpperCase()
+            textFormat: Text.PlainText
+            color: installedCard.updateReady ? Color.accent
+              : installedCard.healthy ? root.textMuted : Color.urgent
+            font.family: root.bar ? root.bar.fontFamily : Style.font.family
+            font.pixelSize: Style.font.caption
+            font.bold: true
+            elide: Text.ElideRight
+          }
+        }
+
+        Row {
+          id: installedActions
+          spacing: Style.space(5)
+          WorkbenchButton {
+            visible: !installedCard.marketplaceManaged && installedCard.updateReady
+            label: "Update"
+            enabled: !root.busy
+            onTriggered: root.applyUpdate(installedCard.plugin.id, installedCard.update.remoteRevision)
+          }
+          WorkbenchButton {
+            visible: installedCard.marketplaceManaged && installedCard.updateReady
+            label: "Update"
+            enabled: !root.busy
+            onTriggered: root.updateManagedPlugin(installedCard.plugin)
+          }
+          WorkbenchButton {
+            visible: !installedCard.plugin.enabled
+            label: "Enable"
+            enabled: !root.busy
+            onTriggered: root.runInstalledAction("installed-enable", installedCard.plugin.id)
+          }
+          WorkbenchButton {
+            visible: Boolean(installedCard.plugin.enabled) && Boolean(installedCard.plugin.canDisable)
+            label: "Disable"
+            enabled: !root.busy
+            onTriggered: root.runInstalledAction("installed-disable", installedCard.plugin.id)
+          }
+          WorkbenchButton {
+            visible: installedCard.marketplaceManaged
+            label: root.marketplaceConfirmation === "repair:" + installedCard.plugin.id
+              ? "Confirm repair" : "Repair"
+            enabled: !root.busy
+            onTriggered: root.confirmedMarketplaceAction("repair", installedCard.plugin)
+          }
+          WorkbenchButton {
+            visible: installedCard.marketplaceManaged
+            label: root.marketplaceConfirmation === "uninstall:" + installedCard.plugin.id
+              ? "Confirm remove" : "Remove"
+            enabled: !root.busy
+            onTriggered: root.confirmedMarketplaceAction("uninstall", installedCard.plugin)
+          }
+        }
+      }
+
+      Text {
+        width: parent.width
+        text: installedCard.marketplaceManaged
+          ? String(installedCard.plugin.installedRevision || "").slice(0, 10)
+            + (installedCard.plugin.catalogueRevision
+              ? " → " + String(installedCard.plugin.catalogueRevision).slice(0, 10) : "")
+          : installedCard.update
+            ? (Number(installedCard.update.behind || 0) > 0
+                ? installedCard.update.behind + " incoming commit(s)" : "No incoming commits")
+              + (Number(installedCard.update.ahead || 0) > 0
+                ? "  ·  " + installedCard.update.ahead + " local" : "")
+            : installedCard.plugin.id + (Array.isArray(installedCard.plugin.kinds)
+                && installedCard.plugin.kinds.length > 0
+                ? "  ·  " + installedCard.plugin.kinds.join(", ") : "")
+        textFormat: Text.PlainText
+        color: root.textMuted
+        font.family: root.bar ? root.bar.fontFamily : Style.font.family
+        font.pixelSize: Style.font.caption
+        elide: Text.ElideRight
+      }
+
+      Text {
+        visible: Boolean(installedCard.plugin.managementError)
+          || Boolean(installedCard.update && installedCard.update.error)
+        width: parent.width
+        text: installedCard.plugin.managementError
+          || (installedCard.update ? installedCard.update.error : "") || ""
+        textFormat: Text.PlainText
+        color: Color.urgent
+        font.family: root.bar ? root.bar.fontFamily : Style.font.family
+        font.pixelSize: Style.font.caption
+        wrapMode: Text.Wrap
+        maximumLineCount: 3
+        elide: Text.ElideRight
       }
     }
   }

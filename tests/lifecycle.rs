@@ -229,6 +229,61 @@ fn fake_omarchy_tools(harness: &Harness, validation_succeeds: bool) -> (PathBuf,
     (tools, log)
 }
 
+#[test]
+fn installed_inventory_classifies_and_controls_omarchy_plugins() {
+    let harness = Harness::new();
+    let tools = harness.root.path().join("inventory-tools");
+    let log = harness.root.path().join("inventory.log");
+    fs::create_dir_all(&tools).unwrap();
+    fs::create_dir_all(
+        harness
+            .home
+            .join(".config/omarchy/plugins/io.test.personal"),
+    )
+    .unwrap();
+    let omarchy = tools.join("omarchy");
+    fs::write(
+        &omarchy,
+        r##"#!/bin/sh
+printf 'omarchy %s\n' "$*" >> "$OMARCHY_TEST_LOG"
+if [ "$1 $2 $3" = "plugin list --json" ]; then
+  printf '%s\n' '[{"id":"omarchy.core","name":"Core","enabled":true,"firstParty":true,"canDisable":false,"kinds":["panel"]},{"id":"io.test.personal","name":"Personal","enabled":true,"firstParty":false,"canDisable":true,"kinds":["panel"]}]'
+fi
+"##,
+    )
+    .unwrap();
+    fs::set_permissions(&omarchy, fs::Permissions::from_mode(0o755)).unwrap();
+
+    let output = harness.run_with_tools(&["installed", "--json"], &tools, &log);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["count"], 2);
+    assert_eq!(report["plugins"][0]["management"], "first-party");
+    assert_eq!(report["plugins"][1]["management"], "local");
+
+    let disabled = harness.run_with_tools(
+        &["installed-disable", "io.test.personal", "--json"],
+        &tools,
+        &log,
+    );
+    assert!(
+        disabled.status.success(),
+        "{}",
+        String::from_utf8_lossy(&disabled.stderr)
+    );
+    let mutation: Value = serde_json::from_slice(&disabled.stdout).unwrap();
+    assert_eq!(mutation["enabled"], false);
+    assert!(
+        fs::read_to_string(log)
+            .unwrap()
+            .contains("omarchy plugin disable io.test.personal")
+    );
+}
+
 const MARKETPLACE_ID: &str = "io.test.marketplace";
 const MARKETPLACE_REPO: &str = "https://github.com/acme/reviewed-plugin";
 const MARKETPLACE_REVISION: &str = "0123456789abcdef0123456789abcdef01234567";
