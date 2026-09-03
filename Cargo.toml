@@ -1,13 +1,13 @@
 [package]
-name = "omarchy-plugin-workbench"
-version = "0.2.0"
+name = "omarchy-discovery"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.98"
-description = "A local development, validation, deployment, and rollback workbench for Omarchy Quattro plugins"
+description = "Discovery and lifecycle management for Omarchy apps, plugins, and themes"
 license = "MIT"
 
 [[bin]]
-name = "omarchy-plugin-workbench"
+name = "omarchy-discovery"
 path = "src/main.rs"
 
 [dependencies]

@@ -39,7 +39,7 @@ impl Harness {
     }
 
     fn run(&self, args: &[&str]) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_omarchy-plugin-workbench"))
+        Command::new(env!("CARGO_BIN_EXE_omarchy-discovery"))
             .args(args)
             .env("HOME", &self.home)
             .env("XDG_CONFIG_HOME", self.home.join(".config"))
@@ -64,7 +64,7 @@ impl Harness {
             &std::env::var_os("PATH").unwrap_or_default(),
         ));
         let path = std::env::join_paths(search_path).unwrap();
-        Command::new(env!("CARGO_BIN_EXE_omarchy-plugin-workbench"))
+        Command::new(env!("CARGO_BIN_EXE_omarchy-discovery"))
             .args(args)
             .env("HOME", &self.home)
             .env("XDG_CONFIG_HOME", self.home.join(".config"))
@@ -414,7 +414,7 @@ fn trusted_tools_ignore_path_and_dangerous_git_environment() {
     .unwrap();
     fs::set_permissions(&git, fs::Permissions::from_mode(0o755)).unwrap();
 
-    let output = Command::new(env!("CARGO_BIN_EXE_omarchy-plugin-workbench"))
+    let output = Command::new(env!("CARGO_BIN_EXE_omarchy-discovery"))
         .args(["doctor", "--json"])
         .env("HOME", &harness.home)
         .env("XDG_CONFIG_HOME", harness.home.join(".config"))

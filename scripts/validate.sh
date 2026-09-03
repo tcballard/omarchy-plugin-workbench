@@ -5,7 +5,7 @@ repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 
 jq -e '
   .schemaVersion == 1
-  and .id == "io.github.tcballard.plugin-workbench"
+  and .id == "io.github.tcballard.discovery"
   and (.kinds | index("bar-widget") != null)
   and .entryPoints.barWidget == "BarWidget.qml"
 ' "$repo_root/manifest.json" >/dev/null
@@ -36,7 +36,7 @@ jq -e '
 
 [[ -f $repo_root/BarWidget.qml ]]
 [[ -f $repo_root/Panel.qml ]]
-[[ -x $repo_root/bin/omarchy-plugin-workbench ]]
+[[ -x $repo_root/bin/omarchy-discovery ]]
 
 if command -v omarchy >/dev/null 2>&1; then
   omarchy plugin validate "$repo_root"

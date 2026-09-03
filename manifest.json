@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "id": "io.github.tcballard.plugin-workbench",
-  "name": "Plugin Workbench",
-  "version": "0.2.0",
+  "id": "io.github.tcballard.discovery",
+  "name": "Discovery",
+  "version": "0.3.0",
   "author": "Tom Ballard",
   "license": "MIT",
-  "description": "Discover, install, build, validate, test, deploy, maintain, and update Omarchy plugins.",
+  "description": "Discover apps, plugins, and themes, manage updates, and build for Omarchy.",
   "kinds": [
     "bar-widget"
   ],
@@ -13,8 +13,8 @@
     "barWidget": "BarWidget.qml"
   },
   "barWidget": {
-    "displayName": "Plugin Workbench",
-    "description": "Local plugin development and deployment status",
+    "displayName": "Discovery",
+    "description": "Apps, plugins, themes, updates, and builds for Omarchy",
     "category": "Development",
     "allowMultiple": false,
     "defaultSection": "right"

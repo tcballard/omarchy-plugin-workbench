@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+repo_root="$(cd -- "$script_dir/.." && pwd -P)"
+
+if [[ -x /usr/bin/omarchy-discovery ]]; then
+  exec /usr/bin/omarchy-discovery "$@"
+elif [[ -x $repo_root/target/release/omarchy-discovery ]]; then
+  exec "$repo_root/target/release/omarchy-discovery" "$@"
+else
+  echo "Discovery needs the omarchy-discovery package or a local release build" >&2
+  exit 69
+fi
