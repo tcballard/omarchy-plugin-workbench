@@ -545,48 +545,56 @@ Panel {
             }
           }
 
-          Flickable {
+          Item {
             width: parent.width
             height: parent.height - y
-            contentWidth: width
-            contentHeight: projectList.implicitHeight
-            clip: true
-            boundsBehavior: Flickable.StopAtBounds
 
-            Column {
-              id: projectList
-              width: parent.width
+            ListView {
+              id: marketplaceList
+              anchors.fill: parent
+              visible: root.marketplaceOpen
+              clip: true
               spacing: Style.space(8)
+              boundsBehavior: Flickable.StopAtBounds
+              reuseItems: true
+              cacheBuffer: height
+              model: root.marketplaceResults
 
-              Column {
-                visible: root.marketplaceOpen
-                width: parent.width
-                spacing: Style.space(8)
-
-                Repeater {
-                  model: root.marketplaceResults
-                  delegate: MarketplaceCard {
-                    required property var modelData
-                    width: projectList.width
-                    plugin: modelData
-                  }
-                }
-
-                Text {
-                  visible: root.marketplaceLoaded && root.marketplaceResults.length === 0
-                  width: parent.width
-                  topPadding: Style.space(40)
-                  text: "No marketplace plugins match this search."
-                  color: Qt.rgba(root.barForeground.r, root.barForeground.g, root.barForeground.b, 0.58)
-                  font.family: root.bar ? root.bar.fontFamily : Style.font.family
-                  font.pixelSize: Style.font.body
-                  horizontalAlignment: Text.AlignHCenter
-                }
+              delegate: MarketplaceCard {
+                required property var modelData
+                width: marketplaceList.width
+                plugin: modelData
               }
+            }
 
-              Rectangle {
-                visible: !root.marketplaceOpen && root.updatesChecked
-                width: parent.width
+            Text {
+              visible: root.marketplaceOpen && root.marketplaceLoaded
+                && root.marketplaceResults.length === 0
+              anchors.left: parent.left
+              anchors.right: parent.right
+              anchors.top: parent.top
+              anchors.topMargin: Style.space(40)
+              text: "No marketplace plugins match this search."
+              color: Qt.rgba(root.barForeground.r, root.barForeground.g, root.barForeground.b, 0.58)
+              font.family: root.bar ? root.bar.fontFamily : Style.font.family
+              font.pixelSize: Style.font.body
+              horizontalAlignment: Text.AlignHCenter
+            }
+
+            ListView {
+              id: projectList
+              anchors.fill: parent
+              visible: !root.marketplaceOpen
+              clip: true
+              spacing: Style.space(8)
+              boundsBehavior: Flickable.StopAtBounds
+              reuseItems: true
+              cacheBuffer: height
+              model: root.projects
+
+              header: Rectangle {
+                visible: root.updatesChecked
+                width: projectList.width
                 height: visible ? updateContent.implicitHeight + Style.space(20) : 0
                 color: Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.08)
                 radius: Style.cornerRadius
@@ -647,19 +655,15 @@ Panel {
                 }
               }
 
-              Repeater {
-                model: root.marketplaceOpen ? [] : root.projects
-
-                delegate: ProjectCard {
-                  required property var modelData
-                  width: projectList.width
-                  project: modelData
-                }
+              delegate: ProjectCard {
+                required property var modelData
+                width: projectList.width
+                project: modelData
               }
 
-              Column {
-                visible: !root.marketplaceOpen && root.projects.length === 0
-                width: parent.width
+              footer: Column {
+                visible: root.projects.length === 0
+                width: projectList.width
                 topPadding: Style.space(48)
                 spacing: Style.space(9)
 

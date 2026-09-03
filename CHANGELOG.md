@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Virtualize and reuse marketplace and project-card delegates so panel scrolling does not lay out every result at once.
 - Add exact-commit, strictly read-only security-review briefs based on the Omarchy marketplace maintainer review method.
 - Add bounded static inventories of trust-boundary cues, symlinks, and executable artifacts without running repository code.
 - Add a schema-one structured manual-review contract with traceable findings, residual risks, commands not run, fix verification, and per-artifact provenance.
