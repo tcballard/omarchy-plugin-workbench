@@ -6,6 +6,8 @@ repo_root="$(cd -- "$script_dir/.." && pwd -P)"
 
 if [[ -x /usr/bin/omarchy-discovery ]]; then
   exec /usr/bin/omarchy-discovery "$@"
+elif [[ -x $repo_root/bin/omarchy-discovery-x86_64 ]]; then
+  exec "$repo_root/bin/omarchy-discovery-x86_64" "$@"
 elif [[ -x $repo_root/target/release/omarchy-discovery ]]; then
   exec "$repo_root/target/release/omarchy-discovery" "$@"
 else

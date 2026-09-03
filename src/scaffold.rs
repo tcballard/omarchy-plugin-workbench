@@ -91,7 +91,7 @@ pub fn create(target: &Path, id: &str, name: &str, kind: &str) -> Result<Scaffol
         )?;
         write_new(&staging.join(".gitignore"), b".DS_Store\n*.log\n", 0o644)?;
         let readme = format!(
-            "# {name}\n\nA personal Omarchy {display_kind} plugin created with Plugin Workbench.\n\n## Develop\n\nRegister, validate, live-link and test this checkout from Plugin Workbench.\n"
+            "# {name}\n\nA personal Omarchy {display_kind} plugin created with Discovery Build.\n\n## Build\n\nRegister, validate, live-link and test this checkout from Discovery.\n"
         );
         write_new(&staging.join("README.md"), readme.as_bytes(), 0o644)?;
         for (path, contents) in &files {

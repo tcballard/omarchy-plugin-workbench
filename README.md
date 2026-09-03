@@ -7,16 +7,18 @@ Discovery is a native Omarchy surface for finding, installing, updating, and bui
 - **Themes** come from the active Omarchy checkout and apply through the normal theme engine.
 - **Build** contains the developer workbench for creating, validating, testing, deploying, and preparing plugins.
 
-Install it directly from GitHub:
+On the integration branch, install the first-party package and launch the panel with its native binding:
 
 ```bash
-omarchy plugin add https://github.com/tcballard/omarchy-plugin-workbench.git --enable
+omarchy-pkg-add omarchy-discovery
+# Super + Alt + D
 ```
 
-Remove the plugin with:
+For development against this repository, build the helper and link the QML module through Omarchy's plugin loader:
 
 ```bash
-omarchy plugin remove io.github.tcballard.discovery
+cargo build --workspace --locked --release
+omarchy plugin add "$(pwd)" --enable
 ```
 
 Workbench deliberately leaves its project registry and deployment history behind. To remove that retained local data too, run:
@@ -113,9 +115,9 @@ bin/omarchy-discovery new /absolute/path/my-plugin \
 
 `panel` creates both a panel and its bar-widget launcher. `bar-widget` and `service` create focused single-entry-point starters. Workbench stages and validates the complete tree before publishing it, refuses an existing destination, initializes a `main` Git repository when Git is available, and never creates a commit or runs plugin code.
 
-## Search and install official marketplace listings
+## Find and manage community plugins
 
-Open **Marketplace** in the panel to refresh the official catalogue, search locally by name, description, author, category, kind, or tag, and filter built-in, verified, or installable listings. “Official marketplace” describes the catalogue source; community listings are not presented as Omarchy-authored plugins. Built-ins are browse-only because Omarchy manages them.
+Open **Discover → Plugins** to refresh the official catalogue, search locally by name, description, author, category, kind, or tag, and filter verified or installable listings. Plugins are one Discovery flavour alongside Apps and Themes; community listings are not presented as Omarchy-authored plugins. Built-ins are browse-only because Omarchy manages them.
 
 Workbench caches [`https://omarchyplugins.com/catalog.json`](https://omarchyplugins.com/catalog.json) only when you explicitly refresh it. Search then works against that private local cache without a network request:
 
@@ -136,7 +138,7 @@ bin/omarchy-discovery marketplace-install io.github.example.plugin \
 
 The catalogue is public network input protected by HTTPS, not a signed package index. A reviewed commit limits moving-target risk but does not make third-party code safe; enabling a plugin runs it with your user permissions.
 
-Workbench records every installation it creates. **Installed** shows the complete host view; **Workbench managed** listings can be updated only to the catalogue's next exact reviewed commit, repaired from that reviewed snapshot, or uninstalled with a recovery copy retained in private state. Marketplace-managed plugins are intentionally excluded from the separate mutable-remote update path.
+Discovery records every plugin installation it creates. **Installed** presents ownership clearly; reviewed plugin listings can be updated only to the catalogue's next exact reviewed commit, repaired from that reviewed snapshot, or uninstalled with a recovery copy retained in private state. Catalogue-managed plugins are intentionally excluded from the separate mutable-remote update path.
 
 ```bash
 bin/omarchy-discovery portfolio
