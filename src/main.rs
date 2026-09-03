@@ -1,5 +1,6 @@
 mod coordination;
 mod deploy;
+mod inventory;
 mod manifest;
 mod marketplace;
 mod model;
@@ -185,6 +186,12 @@ enum Command {
     Doctor,
     /// Show registered development projects and Workbench-managed installations.
     Portfolio,
+    /// Show every plugin discovered by Omarchy with its management source.
+    Installed,
+    /// Enable an installed plugin through Omarchy.
+    InstalledEnable { id: String },
+    /// Disable an installed plugin through Omarchy.
+    InstalledDisable { id: String },
     /// Fetch and review updates for installed Git-managed plugins.
     Updates { id: Option<String> },
     /// Apply one reviewed update through Omarchy's validator and rollback path.
@@ -744,6 +751,22 @@ fn run(cli: &Cli) -> Result<()> {
                 "marketplace": marketplace.plugins
             });
             emit(cli.json, &report, "Workbench portfolio loaded")
+        }
+        Command::Installed => {
+            let report = inventory::inspect(&paths)?;
+            emit(
+                cli.json,
+                &report,
+                &format!("{} installed plugin(s) discovered", report.count),
+            )
+        }
+        Command::InstalledEnable { id } => {
+            let report = inventory::set_enabled(&paths, id, true)?;
+            emit(cli.json, &report, &report.message)
+        }
+        Command::InstalledDisable { id } => {
+            let report = inventory::set_enabled(&paths, id, false)?;
+            emit(cli.json, &report, &report.message)
         }
         Command::Updates { id } => {
             let report = updates::inspect(&paths, id.as_deref())?;

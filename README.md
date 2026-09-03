@@ -21,7 +21,13 @@ rm -rf -- "$HOME/.config/omarchy/plugin-workbench" \
   "$HOME/.local/state/omarchy/plugin-workbench"
 ```
 
-It answers two different development needs explicitly:
+The native panel is organised around the plugin lifecycle:
+
+- **Build** creates, links, validates, tests, and prepares personal plugin projects.
+- **Installed** inventories every plugin Omarchy discovers, identifies how it is managed, enables or disables eligible plugins, and offers only safe updates for its source type.
+- **Discover** searches the cached official marketplace catalogue and installs reviewed snapshots.
+
+Build supports these development loops explicitly:
 
 - **New plugin** creates a validated personal Panel, bar widget, or service starter at an explicit absolute path, initializes Git, and registers it without committing or replacing existing files.
 - **Live link** points Omarchy at the mutable plugin checkout for the fastest edit/reload loop.
@@ -59,7 +65,23 @@ For each explicitly registered project, Workbench shows:
 
 Available actions include Validate, Security review, Test, Test window, capability workflows, environment diagnostics, isolated sessions, handoffs, evidence, release readiness, Live link, Snapshot, Rollback, Enable, Disable, Undeploy, reviewed installed-plugin updates, Logs, and Doctor.
 
-The project and marketplace feeds support Arrow Up/Down (or J/K), Page Up/Down, Home, and End. Project cards lead with one state-aware next action; specialist operations remain under **More actions**.
+All three feeds support Arrow Up/Down (or J/K), Page Up/Down, Home, and End. Use Ctrl+1, Ctrl+2, and Ctrl+3 to switch between Build, Installed, and Discover. Project cards lead with one state-aware next action; specialist operations remain under **More actions**.
+
+## Launch the native plugin panel
+
+Workbench is already a native Omarchy/Quickshell panel rather than a separate desktop application. Its stable shell module id is `io.github.tcballard.plugin-workbench`. Until Omarchy can ship it first-party, add this optional shortcut to `~/.config/hypr/bindings.lua`:
+
+```lua
+local o = require("omarchy")
+
+o.bind(
+  "SUPER + ALT + P",
+  "Plugins",
+  "omarchy-shell shell toggle io.github.tcballard.plugin-workbench"
+)
+```
+
+The plugin does not rewrite global keybindings during installation. The current schema-one Omarchy plugin manifest has no keybinding declaration, so the stock `Super+Alt+P` binding belongs in Omarchy itself if Workbench is accepted as a first-party panel. See [the upstream integration contract](docs/omarchy-integration.md).
 
 ## Create a personal plugin
 
@@ -101,6 +123,9 @@ Workbench records every installation it creates. **Installed** shows the complet
 
 ```bash
 bin/omarchy-plugin-workbench portfolio
+bin/omarchy-plugin-workbench installed
+bin/omarchy-plugin-workbench installed-disable io.github.example.plugin
+bin/omarchy-plugin-workbench installed-enable io.github.example.plugin
 bin/omarchy-plugin-workbench marketplace-managed
 bin/omarchy-plugin-workbench marketplace-update io.github.example.plugin \
   --revision FULL_REVIEWED_COMMIT --yes

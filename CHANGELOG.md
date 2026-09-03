@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Reorganise the native panel around Build, Installed, and Discover lifecycle modes with Ctrl+1/2/3 switching and a shared keyboard-scroll model.
+- Inventory every plugin Omarchy discovers and classify first-party, marketplace-managed, direct Git, live-link, and local installations.
+- Add bounded Installed-view enable and disable controls, safe source-aware update actions, and marketplace repair/removal controls.
+- Publish the stable native-panel toggle contract and proposed unclaimed `Super+Alt+P` first-party Omarchy binding without mutating user configuration.
 - Add a native New plugin flow with validated Panel, bar-widget, and service starters, atomic no-overwrite creation, Git initialisation, and automatic registration.
 - Give each project one state-aware recommended action while keeping specialist controls behind More actions; add explicit Undeploy and Forget controls.
 - Add Arrow/J/K, Page Up/Down, Home, and End navigation to both virtualized panel feeds.
