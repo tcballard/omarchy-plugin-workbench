@@ -2,7 +2,7 @@
 
 ## Product boundary
 
-Plugin Workbench is a local control plane for explicit plugin projects. It coordinates Omarchy's existing plugin commands rather than replacing the official registry or marketplace.
+Discovery is Omarchy's native ecosystem surface. It normalizes Apps, Plugins, and Themes for browsing while delegating every mutation to the existing owner: package tooling, the reviewed plugin lifecycle, or the theme engine. Build contains the local Workbench control plane for explicit plugin projects.
 
 The native QML surface remains thin. The Rust helper owns filesystem boundaries, manifest parsing, process lifecycle, deployment receipts, and stable JSON responses.
 

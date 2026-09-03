@@ -109,7 +109,7 @@ pub fn run_project_checks(
     let checks = selected_checks(project, selected)?;
     if !checks.is_empty() && !crate::registry::definition_is_trusted(project)? {
         bail!(
-            "project checks are not trusted; review .omarchy-workbench.json and run: omarchy-plugin-workbench trust {}",
+            "project checks are not trusted; review .omarchy-workbench.json and run: omarchy-discovery trust {}",
             project.id
         );
     }
@@ -153,7 +153,7 @@ pub fn run_project_checks(
 pub fn run_workflow(paths: &AppPaths, project: &Project, name: &str) -> Result<WorkflowReport> {
     if !crate::registry::definition_is_trusted(project)? {
         bail!(
-            "project definition is not trusted or changed since trust; review it and run: omarchy-plugin-workbench trust {}",
+            "project definition is not trusted or changed since trust; review it and run: omarchy-discovery trust {}",
             project.id
         );
     }
@@ -171,7 +171,7 @@ pub fn run_workflow(paths: &AppPaths, project: &Project, name: &str) -> Result<W
         .collect::<Vec<_>>();
     if !missing.is_empty() {
         bail!(
-            "workflow '{}' requires local capability approval: {}; approve each with: omarchy-plugin-workbench approve {} CAPABILITY",
+            "workflow '{}' requires local capability approval: {}; approve each with: omarchy-discovery approve {} CAPABILITY",
             workflow.name,
             missing.join(", "),
             project.id
