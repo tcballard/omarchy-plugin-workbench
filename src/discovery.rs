@@ -134,7 +134,10 @@ pub fn refresh(paths: &AppPaths) -> Result<RefreshReport> {
 
     let theme_listings = theme_items(paths).len();
     if plugin_listings == 0 && app_listings == 0 && theme_listings == 0 {
-        bail!("Discovery could not load any catalogue source: {}", warnings.join("; "));
+        bail!(
+            "Discovery could not load any catalogue source: {}",
+            warnings.join("; ")
+        );
     }
     Ok(RefreshReport {
         ok: warnings.is_empty(),
@@ -220,7 +223,11 @@ pub fn search(paths: &AppPaths, options: &SearchOptions<'_>) -> Result<SearchRep
         items.extend(theme_items(paths));
     }
 
-    let query = options.query.unwrap_or_default().trim().to_ascii_lowercase();
+    let query = options
+        .query
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase();
     items.retain(|item| {
         (query.is_empty()
             || format!(
@@ -242,7 +249,11 @@ pub fn search(paths: &AppPaths, options: &SearchOptions<'_>) -> Result<SearchRep
             .installed
             .cmp(&left.installed)
             .then_with(|| left.flavor.cmp(&right.flavor))
-            .then_with(|| left.name.to_ascii_lowercase().cmp(&right.name.to_ascii_lowercase()))
+            .then_with(|| {
+                left.name
+                    .to_ascii_lowercase()
+                    .cmp(&right.name.to_ascii_lowercase())
+            })
     });
     let matched = items.len();
     items.truncate(options.limit);
@@ -278,9 +289,10 @@ fn refresh_apps(paths: &AppPaths) -> Result<AppCatalog> {
         bail!("curl is required to refresh the app catalogue");
     }
     secure_dir(&paths.marketplace_dir)?;
-    let temporary = paths
-        .marketplace_dir
-        .join(format!("apps.tmp.{}.{}", std::process::id(), now_unix()));
+    let temporary =
+        paths
+            .marketplace_dir
+            .join(format!("apps.tmp.{}.{}", std::process::id(), now_unix()));
     drop(
         OpenOptions::new()
             .create_new(true)
@@ -349,10 +361,13 @@ fn read_app_catalog_path(path: &Path) -> Result<AppCatalog> {
     if metadata.len() > MAX_APP_CATALOG_BYTES {
         bail!("app catalogue exceeds size limit");
     }
-    let catalog: AppCatalog = serde_json::from_slice(&fs::read(path)?)
-        .context("app catalogue is not valid JSON")?;
+    let catalog: AppCatalog =
+        serde_json::from_slice(&fs::read(path)?).context("app catalogue is not valid JSON")?;
     if catalog.schema_version != APP_CATALOG_SCHEMA {
-        bail!("unsupported app catalogue schema {}", catalog.schema_version);
+        bail!(
+            "unsupported app catalogue schema {}",
+            catalog.schema_version
+        );
     }
     if catalog.apps.len() > MAX_ITEMS {
         bail!("app catalogue exceeds item limit");
