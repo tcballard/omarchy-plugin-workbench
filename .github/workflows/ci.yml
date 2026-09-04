@@ -26,11 +26,11 @@ jobs:
       - name: Upload Linux runtime candidate
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: omarchy-discovery-linux-x86_64
-          path: target/release/omarchy-discovery
+          name: omarchy-plugin-workbench-linux-x86_64
+          path: target/release/omarchy-plugin-workbench
           if-no-files-found: error
       - name: Shell syntax
-        run: bash -n bin/omarchy-discovery scripts/validate.sh
+        run: bash -n bin/omarchy-plugin-workbench scripts/validate.sh
       - name: Pinned Omarchy contract
         run: |
           git clone --filter=blob:none https://github.com/omacom/omarchy.git /tmp/omarchy

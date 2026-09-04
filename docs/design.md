@@ -2,13 +2,13 @@
 
 ## Product boundary
 
-Discovery is Omarchy's native ecosystem surface. It normalizes Apps, Plugins, and Themes for browsing while delegating every mutation to the existing owner: package tooling, the reviewed plugin lifecycle, or the theme engine. Build contains the local Workbench control plane for explicit plugin projects.
+Plugin Workbench is a local control plane for explicit plugin projects. It coordinates Omarchy's existing plugin commands rather than replacing the official registry or marketplace.
 
 The native QML surface remains thin. The Rust helper owns filesystem boundaries, manifest parsing, process lifecycle, deployment receipts, and stable JSON responses.
 
 ## Official marketplace discovery
 
-Discovery consumes the marketplace's published production `catalog.json`, not repository scraping or free-form install commands. Refresh is explicit and bounded; searches run entirely against the private cache. Results preserve the distinction between Omarchy built-ins and community catalogue entries.
+Workbench consumes the marketplace's published production `catalog.json`, not repository scraping or free-form install commands. Refresh is explicit and bounded; searches run entirely against the private cache. Results preserve the distinction between Omarchy built-ins and community catalogue entries.
 
 Built-ins are browse-only. A community listing is actionable only when the catalogue marks it installable, its repository is a root plugin on GitHub HTTPS, and it carries a full listing-validated commit. The panel carries the displayed repository and commit back to the helper. The helper compares both with the current cache, performs a detached checkout with hooks disabled, verifies `HEAD`, validates the manifest id and plugin contract, then atomically publishes the directory and asks Omarchy to rescan. This avoids executing marketplace-provided command strings and rejects a listing that changed after review.
 
@@ -34,7 +34,7 @@ A `Ready` review can be rendered into private Markdown and JSON dossiers. They c
 
 ## Installed plugin updates
 
-Update management is independent of the explicit development-project registry. Discovery is restricted to bounded, normal Git checkouts immediately beneath Omarchy's documented plugins directory; live links and non-Git installs remain outside this path.
+Update management is independent of the explicit development-project registry. Workbench is restricted to bounded, normal Git checkouts immediately beneath Omarchy's documented plugins directory; live links and non-Git installs remain outside this path.
 
 The review step fetches `origin/HEAD`, classifies the checkout as up to date, update available, dirty, locally ahead, diverged, or failed, and returns bounded incoming commit and diff-stat evidence. Only a clean fast-forward is actionable.
 

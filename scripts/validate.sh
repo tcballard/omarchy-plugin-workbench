@@ -5,7 +5,7 @@ repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 
 jq -e '
   .schemaVersion == 1
-  and .id == "io.github.tcballard.discovery"
+  and .id == "io.github.tcballard.plugin-workbench"
   and (.kinds | index("bar-widget") != null)
   and .entryPoints.barWidget == "BarWidget.qml"
 ' "$repo_root/manifest.json" >/dev/null
@@ -36,7 +36,14 @@ jq -e '
 
 [[ -f $repo_root/BarWidget.qml ]]
 [[ -f $repo_root/Panel.qml ]]
-[[ -x $repo_root/bin/omarchy-discovery ]]
+[[ -x $repo_root/bin/omarchy-plugin-workbench ]]
+grep -Fq 'text: "OMARCHY PLUGIN WORKBENCH"' "$repo_root/Panel.qml"
+grep -Fq 'root.setViewMode("discover")' "$repo_root/Panel.qml"
+grep -Fq 'root.setViewMode("installed")' "$repo_root/Panel.qml"
+grep -Fq 'root.setViewMode("updates")' "$repo_root/Panel.qml"
+grep -Fq 'root.setViewMode("build")' "$repo_root/Panel.qml"
+grep -Fq 'Qt.Key_4' "$repo_root/Panel.qml"
+! grep -Eq 'discoveryFlavor|omarchy-discovery|flavou?r' "$repo_root/Panel.qml"
 
 if command -v omarchy >/dev/null 2>&1; then
   omarchy plugin validate "$repo_root"

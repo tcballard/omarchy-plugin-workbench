@@ -8,29 +8,30 @@ Complete this matrix on an actual official x86-64 Omarchy Quattro desktop before
 - Whether the host matches `b686ed892d9c3020c3336203f6d34cc75b544e2b`.
 - Quickshell and Hyprland versions.
 - Monitor count, layout, and scale factors.
-- Discovery commit and release-binary SHA-256.
+- Plugin Workbench commit and release-binary SHA-256.
 
 ## Build and validate
 
 ```bash
 cargo build --workspace --locked --release
-install -m 0755 target/release/omarchy-discovery bin/omarchy-discovery-x86_64
+sudo install -Dm755 target/release/omarchy-plugin-workbench /usr/bin/omarchy-plugin-workbench
 omarchy plugin validate .
 qmllint -I "$OMARCHY_PATH/shell" BarWidget.qml Panel.qml
 ```
 
 ## Native shell matrix
 
-- Link this checkout under `~/.config/omarchy/plugins/io.github.tcballard.discovery`.
+- Link this checkout under `~/.config/omarchy/plugins/io.github.tcballard.plugin-workbench`.
 - Rescan and enable the widget in the right bar section.
 - Confirm the bar label renders on horizontal and vertical bars.
-- Open by click and `omarchy-shell shell summon io.github.tcballard.discovery '{}'`.
+- Open by click and `omarchy-shell shell summon io.github.tcballard.plugin-workbench '{}'`.
 - Close with Escape, outside click, repeated widget click, and shell hide.
-- Switch directly between Discovery and both neighbouring panels.
+- Switch directly between Workbench and both neighbouring panels.
 - Confirm keyboard focus returns to the previous application after closing.
 - Confirm the panel fits at 100%, fractional, and high-DPI scale where available.
 - Register valid root and nested plugin projects from the panel.
-- Open Discover and exercise Featured, Apps, Plugins, and Themes; refresh the production sources and search/filter each flavour.
+- Open Discover, refresh the production catalogue, and search by text plus each built-in, verified, installable, and installed filter.
+- Open Updates independently and confirm review-first state, exact revisions, blocked states, and the empty-current state.
 - Install and enable one reviewed community listing; confirm its displayed commit equals installed `HEAD` and its panel state changes to installed.
 - Refresh after a newer reviewed snapshot, apply it, and confirm `HEAD`, the ownership receipt and panel status all move to the same exact commit.
 - Repair a deliberately damaged managed checkout and confirm the prior directory remains recoverable in Workbench trash.

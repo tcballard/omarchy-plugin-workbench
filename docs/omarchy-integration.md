@@ -1,30 +1,30 @@
 # Omarchy integration contract
 
-Discovery is implemented as a native Quickshell panel loaded by its bar widget. It does not need a second GUI toolkit, process, or desktop window to behave as a first-class Omarchy surface. The plugin Workbench remains the implementation behind its Build view.
+Plugin Workbench is implemented as a native Quickshell panel loaded by its bar widget. It does not need a second GUI toolkit, process, or desktop window to behave as a first-class Omarchy surface.
 
 ## Stable panel toggle
 
 The panel and its launcher share this module id:
 
 ```text
-io.github.tcballard.discovery
+io.github.tcballard.plugin-workbench
 ```
 
 The supported shell toggle is:
 
 ```bash
-omarchy-shell shell toggle io.github.tcballard.discovery
+omarchy-shell shell toggle io.github.tcballard.plugin-workbench
 ```
 
 ## Proposed first-party binding
 
-At the pinned Omarchy contract, `Super+Alt+D` is unclaimed by the stock bindings. A first-party integration can add this alongside the other native shell toggles:
+At the pinned Omarchy contract, `Super+Alt+P` is unclaimed by the stock bindings. A first-party integration can add this alongside the other native shell toggles:
 
 ```lua
 o.bind(
-  "SUPER + ALT + D",
-  "Discovery",
-  "omarchy-shell shell toggle io.github.tcballard.discovery"
+  "SUPER + ALT + P",
+  "Plugins",
+  "omarchy-shell shell toggle io.github.tcballard.plugin-workbench"
 )
 ```
 
