@@ -3,13 +3,13 @@ set -euo pipefail
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 version="$(jq -r '.version' "$repo_root/manifest.json")"
-archive_name="omarchy-discovery-${version}-x86_64.tar.gz"
-archive_root="omarchy-discovery-${version}"
+archive_name="omarchy-plugin-workbench-${version}-x86_64.tar.gz"
+archive_root="omarchy-plugin-workbench-${version}"
 
 cargo build --manifest-path "$repo_root/Cargo.toml" --workspace --locked --release
 install -m 0755 \
-  "$repo_root/target/release/omarchy-discovery" \
-  "$repo_root/bin/omarchy-discovery-x86_64"
+  "$repo_root/target/release/omarchy-plugin-workbench" \
+  "$repo_root/bin/omarchy-plugin-workbench-x86_64"
 
 "$repo_root/scripts/validate.sh"
 mkdir -p "$repo_root/dist"

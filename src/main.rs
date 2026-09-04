@@ -1,6 +1,5 @@
 mod coordination;
 mod deploy;
-mod discovery;
 mod inventory;
 mod manifest;
 mod marketplace;
@@ -24,7 +23,7 @@ use std::fmt;
 use std::path::PathBuf;
 
 #[derive(Debug, Parser)]
-#[command(name = "omarchy-discovery", version, about)]
+#[command(name = "omarchy-plugin-workbench", version, about)]
 struct Cli {
     #[arg(long, global = true, help = "Emit a stable JSON result")]
     json: bool,
@@ -35,24 +34,6 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Refresh every configured Discovery catalogue.
-    DiscoveryRefresh,
-    /// Search apps, plugins, and themes through one normalized catalogue.
-    DiscoverySearch {
-        query: Option<String>,
-        #[arg(long, default_value = "all")]
-        flavor: String,
-        #[arg(long)]
-        verified: bool,
-        #[arg(long)]
-        installable: bool,
-        #[arg(long)]
-        installed: bool,
-        #[arg(long, default_value_t = 50)]
-        limit: usize,
-    },
-    /// Apply an included Omarchy theme.
-    DiscoveryThemeApply { id: String },
     /// Create and register a new personal plugin project.
     New {
         path: PathBuf,
@@ -327,7 +308,7 @@ fn main() {
                 .expect("serialize error result")
             );
         } else {
-            eprintln!("omarchy-discovery: {error:#}");
+            eprintln!("omarchy-plugin-workbench: {error:#}");
         }
         std::process::exit(1);
     }
@@ -337,43 +318,6 @@ fn run(cli: &Cli) -> Result<()> {
     let paths = AppPaths::discover()?;
     paths.ensure()?;
     match &cli.command {
-        Command::DiscoveryRefresh => {
-            let report = discovery::refresh(&paths)?;
-            emit(cli.json, &report, &report.message)
-        }
-        Command::DiscoverySearch {
-            query,
-            flavor,
-            verified,
-            installable,
-            installed,
-            limit,
-        } => {
-            let report = discovery::search(
-                &paths,
-                &discovery::SearchOptions {
-                    query: query.as_deref(),
-                    flavor,
-                    verified_only: *verified,
-                    installable_only: *installable,
-                    installed_only: *installed,
-                    limit: *limit,
-                },
-            )?;
-            emit(
-                cli.json,
-                &report,
-                &format!("{} Discovery result(s)", report.returned),
-            )
-        }
-        Command::DiscoveryThemeApply { id } => {
-            discovery::apply_theme(&paths, id)?;
-            emit(
-                cli.json,
-                &json!({"ok": true, "action": "theme-apply", "id": id, "message": format!("Applied theme {id}")}),
-                &format!("Applied theme {id}"),
-            )
-        }
         Command::New {
             path,
             id,
@@ -450,7 +394,7 @@ fn run(cli: &Cli) -> Result<()> {
             if cli.json {
                 print_json(&statuses)
             } else if statuses.is_empty() {
-                println!("No projects registered. Add one with: omarchy-discovery add PATH");
+                println!("No projects registered. Add one with: omarchy-plugin-workbench add PATH");
                 Ok(())
             } else {
                 println!(
