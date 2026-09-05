@@ -37,12 +37,20 @@ jq -e '
 [[ -f $repo_root/BarWidget.qml ]]
 [[ -f $repo_root/Panel.qml ]]
 [[ -x $repo_root/bin/omarchy-plugin-workbench ]]
+if command -v node >/dev/null 2>&1; then
+  node "$repo_root/tests/panel-navigation.test.cjs"
+fi
 grep -Fq 'text: "OMARCHY PLUGIN WORKBENCH"' "$repo_root/Panel.qml"
 grep -Fq 'root.setViewMode("discover")' "$repo_root/Panel.qml"
 grep -Fq 'root.setViewMode("installed")' "$repo_root/Panel.qml"
 grep -Fq 'root.setViewMode("updates")' "$repo_root/Panel.qml"
 grep -Fq 'root.setViewMode("build")' "$repo_root/Panel.qml"
-grep -Fq 'Qt.Key_4' "$repo_root/Panel.qml"
+grep -Fq 'focusTarget: keyCatcher' "$repo_root/Panel.qml"
+grep -Fq 'onMoveRequested: function(dx, dy)' "$repo_root/Panel.qml"
+grep -Fq 'if (text === "[") root.switchSection(-1)' "$repo_root/Panel.qml"
+grep -Fq 'else if (text === "]") root.switchSection(1)' "$repo_root/Panel.qml"
+grep -Fq 'blocked: root.editorOwnsKeyboard()' "$repo_root/Panel.qml"
+! grep -Fq 'Qt.Key_4' "$repo_root/Panel.qml"
 ! grep -Eq 'discoveryFlavor|omarchy-discovery|flavou?r' "$repo_root/Panel.qml"
 
 if command -v omarchy >/dev/null 2>&1; then

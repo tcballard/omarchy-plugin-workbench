@@ -68,7 +68,14 @@ For each explicitly registered project, Workbench shows:
 
 Available actions include Validate, Security review, Test, Test window, capability workflows, environment diagnostics, isolated sessions, handoffs, evidence, release readiness, Live link, Snapshot, Rollback, Enable, Disable, Undeploy, reviewed installed-plugin updates, Logs, and Doctor.
 
-All four feeds support Arrow Up/Down (or J/K), Page Up/Down, Home, and End. Use Ctrl+1 through Ctrl+4 for Discover, Installed, Updates, and Build. Project cards lead with one state-aware next action; specialist operations remain under **More actions**.
+Keyboard navigation follows the shell's panel model. Left/Right (or H/L and `[`/`]`) moves between Discover, Installed, Updates, and Build. Enter moves from the section rail into the active section; Up/Down (or J/K) then walks its controls and Enter activates the focused control. Escape returns to the section rail before closing the panel. Tab and Shift+Tab remain available for switching between neighbouring shell panels. Project cards lead with one state-aware next action; specialist operations remain under **More actions**.
+
+Opening the panel uses the saved catalogue and retains loaded views for the shell
+session. Use **Refresh** to fetch catalogue changes or reload local inventory,
+and **Check updates** to fetch Git remotes. A fresh installation prompts you to
+download the catalogue rather than fetching it on open. Tabs remain navigable
+during operations; conflicting actions stay disabled. Successful mutations
+invalidate cached views and previous Git update reviews.
 
 ## Launch the native plugin panel
 

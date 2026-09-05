@@ -26,6 +26,9 @@ qmllint -I "$OMARCHY_PATH/shell" BarWidget.qml Panel.qml
 - Confirm the bar label renders on horizontal and vertical bars.
 - Open by click and `omarchy-shell shell summon io.github.tcballard.plugin-workbench '{}'`.
 - Close with Escape, outside click, repeated widget click, and shell hide.
+- From the section rail, use Left/Right and `[`/`]` to move through all four sections; press Enter to enter each section, use Up/Down to traverse its visible controls, and press Enter to activate a safe control.
+- Confirm Escape returns from section content to the section rail, then closes the panel on the next press.
+- Confirm search and project fields accept normal text, cursor keys, Tab, and Escape without also moving the panel cursor.
 - Switch directly between Workbench and both neighbouring panels.
 - Confirm keyboard focus returns to the previous application after closing.
 - Confirm the panel fits at 100%, fractional, and high-DPI scale where available.
@@ -47,6 +50,19 @@ qmllint -I "$OMARCHY_PATH/shell" BarWidget.qml Panel.qml
 - Place an unmanaged checkout at the target and confirm Workbench preserves it.
 - Restart `omarchy-shell` and confirm registrations, receipts, and deployment state survive.
 - Lock the screen and verify Workbench does not perform plugin writes while locked.
+
+## Responsiveness checks
+
+- With no catalogue cache, open Discover: it should prompt for Refresh without fetching.
+- With a saved catalogue, reopen Discover: display cached results without network work.
+- Reopen Installed and Build: retain results until Refresh or a Workbench mutation.
+- Open Updates: do not fetch remotes until Check updates or explicit Refresh.
+- During a slow refresh, switch tabs by mouse and bracket keys; after completion,
+  the selected tab should load if necessary, without switching back.
+- After applying updates, previous review actions must disappear until checked again.
+- Compare first and repeated opening latency, shell CPU while closed, memory,
+  and scrolling on the same host and catalogue. Do not infer frame time or
+  memory improvements solely from fewer helper calls.
 
 ## Failure and recovery
 
