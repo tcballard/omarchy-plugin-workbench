@@ -53,6 +53,19 @@ qmllint -I "$OMARCHY_PATH/shell" BarWidget.qml Panel.qml
 
 ## Responsiveness checks
 
+- Results start as compact rows. Enter opens one row's details without running
+  its actions; Escape collapses details and preserves row selection. Mouse click
+  provides the same disclosure. Switching sections closes the previous details.
+
+- Press Down from the section rail: focus search or the first control. Continue
+  Down through filters and result cards; confirm the selected card has a visible
+  outline and scrolls into view. Left/Right should follow a row of controls.
+- In a text field, Left/Right must move the text cursor; Up/Down must leave the
+  field for the adjacent control. Brackets entered in a field remain text.
+- Confirm Installed returns actual inventory rather than `OMARCHY_PATH is not set`.
+- Only the active section should instantiate list delegates; inactive result
+  arrays remain cached. Check rapid switching and traversal beyond the viewport.
+
 - With no catalogue cache, open Discover: it should prompt for Refresh without fetching.
 - With a saved catalogue, reopen Discover: display cached results without network work.
 - Reopen Installed and Build: retain results until Refresh or a Workbench mutation.

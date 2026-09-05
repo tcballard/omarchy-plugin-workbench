@@ -53,6 +53,7 @@ pub fn trusted_command(name: &str) -> Option<Command> {
     let executable = resolve_trusted_tool(name)?;
     let mut command = Command::new(executable);
     apply_trusted_environment(&mut command);
+    apply_omarchy_environment(&mut command);
     Some(command)
 }
 
@@ -160,6 +161,7 @@ fn run_command<S: AsRef<OsStr>>(
     }
     if matches!(environment, EnvironmentPolicy::Trusted) {
         apply_trusted_environment(&mut command);
+        apply_omarchy_environment(&mut command);
     }
     command.process_group(0);
     let mut child = command
@@ -355,6 +357,26 @@ fn drain_available(
             let remaining = OUTPUT_LIMIT.saturating_sub(destination.len());
             destination.extend_from_slice(&bytes[..bytes.len().min(remaining)]);
             *output_limited |= bytes.len() > remaining;
+        }
+    }
+}
+
+// Only Omarchy IPC tools need desktop discovery context. Keep the environment
+// scrubbed for Git, curl, and project checks (especially executable overrides).
+fn apply_omarchy_environment(command: &mut Command) {
+    let program = Path::new(command.get_program()).file_name();
+    if program != Some(OsStr::new("omarchy")) && program != Some(OsStr::new("omarchy-shell")) {
+        return;
+    }
+    for name in [
+        "OMARCHY_PATH",
+        "XDG_RUNTIME_DIR",
+        "WAYLAND_DISPLAY",
+        "HYPRLAND_INSTANCE_SIGNATURE",
+        "DBUS_SESSION_BUS_ADDRESS",
+    ] {
+        if let Some(value) = std::env::var_os(name) {
+            command.env(name, value);
         }
     }
 }

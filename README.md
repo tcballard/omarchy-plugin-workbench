@@ -68,7 +68,9 @@ For each explicitly registered project, Workbench shows:
 
 Available actions include Validate, Security review, Test, Test window, capability workflows, environment diagnostics, isolated sessions, handoffs, evidence, release readiness, Live link, Snapshot, Rollback, Enable, Disable, Undeploy, reviewed installed-plugin updates, Logs, and Doctor.
 
-Keyboard navigation follows the shell's panel model. Left/Right (or H/L and `[`/`]`) moves between Discover, Installed, Updates, and Build. Enter moves from the section rail into the active section; Up/Down (or J/K) then walks its controls and Enter activates the focused control. Escape returns to the section rail before closing the panel. Tab and Shift+Tab remain available for switching between neighbouring shell panels. Project cards lead with one state-aware next action; specialist operations remain under **More actions**.
+Results are compact rows showing a name and short status. Enter or click opens the selected row's details; only one detail view is loaded at a time. Escape collapses details before returning to the section rail and closing the panel.
+
+On the section rail, Left/Right (or H/L) switches sections and Down or Enter enters the controls. Inside a section, arrows move to nearby controls in the direction pressed. Up/Down traverses selected result rows and scrolls them into view; Enter on an expanded row focuses its actions before activating anything. Brackets switch sections from non-editing controls. In text fields, Left/Right edits text and Up/Down moves between controls. Tab and Shift+Tab switch neighbouring shell panels.
 
 Opening the panel uses the saved catalogue and retains loaded views for the shell
 session. Use **Refresh** to fetch catalogue changes or reload local inventory,

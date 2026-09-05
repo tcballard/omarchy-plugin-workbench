@@ -4,6 +4,7 @@ import Quickshell
 import Quickshell.Io
 import qs.Commons
 import qs.Ui
+import "Navigation.js" as Navigation
 
 Panel {
   id: root
@@ -44,6 +45,7 @@ Panel {
   property string newPluginKind: "panel"
   property string navigationLevel: "sections"
   property var navigationItem: null
+  property string detailKey: ""
   property string pendingAction: ""
   readonly property int projectCount: projects.length
   readonly property bool buildOpen: viewMode === "build"
@@ -146,45 +148,75 @@ Panel {
     root.navigationLevel = "content"
     root.navigationItem = item
     item.forceActiveFocus()
+    var row = item
+    while (row && !row.workbenchFeed) row = row.parent
+    if (row) row.workbenchFeed.positionViewAtIndex(row.workbenchIndex, ListView.Contain)
     return true
   }
 
   function enterContent() {
-    var candidate = buildTab.nextItemInFocusChain(true)
-    var guard = 0
-    while (candidate && guard < 256) {
-      if (!root.isSectionItem(candidate) && candidate.visible && candidate.enabled)
-        return root.focusContentItem(candidate)
-      candidate = candidate.nextItemInFocusChain(true)
-      guard += 1
-    }
-    return false
+    var tabs = {discover: discoverTab, installed: installedTab, updates: updatesTab, build: buildTab}
+    var target = Navigation.nearest(navigationTargets(), navigationRect(tabs[root.viewMode]), 0, 1)
+    return target ? focusContentItem(target) : false
   }
 
-  function moveContent(direction) {
+  function navigationRect(item) {
+    var point = item.mapToItem(keyCatcher, 0, 0)
+    return {item: item, x: point.x, y: point.y, width: item.width, height: item.height,
+      cx: point.x + item.width / 2, cy: point.y + item.height / 2}
+  }
+
+  function navigationTargets() {
+    var targets = []
+    function visit(item) {
+      if (!item.visible || !item.enabled) return
+      if (item.workbenchControl === true && item.width > 0 && item.height > 0)
+        targets.push(navigationRect(item))
+      for (var i = 0; i < item.children.length; ++i) visit(item.children[i])
+    }
+    visit(keyCatcher)
+    return targets
+  }
+
+  function moveContent(dx, dy) {
     if (!root.navigationItem || !root.navigationItem.activeFocus) {
       root.enterContent()
       return
     }
-    var candidate = root.navigationItem.nextItemInFocusChain(direction > 0)
-    var guard = 0
-    while (candidate && guard < 256) {
-      if (root.isSectionItem(candidate)) {
-        root.returnToSections()
+    var current = root.navigationItem
+    // Row traversal uses the list model, including delegates not yet created.
+    if (current.workbenchFeed && dy !== 0) {
+      var feed = current.workbenchFeed
+      var index = current.workbenchIndex + dy
+      if (index >= 0 && index < feed.count) {
+        feed.currentIndex = index
+        feed.positionViewAtIndex(index, ListView.Contain)
+        Qt.callLater(function() {
+          if (root.opened && feed.visible && feed.currentItem) focusContentItem(feed.currentItem)
+        })
         return
       }
-      if (candidate.visible && candidate.enabled) {
-        root.focusContentItem(candidate)
-        return
-      }
-      candidate = candidate.nextItemInFocusChain(direction > 0)
-      guard += 1
     }
-    root.returnToSections()
+    var candidate = Navigation.nearest(navigationTargets(), navigationRect(current), dx, dy)
+    if (candidate) focusContentItem(candidate)
+    else if (dy < 0) returnToSections()
   }
 
   function activateContent() {
     var item = root.navigationItem
+    if (item && item.openDetails && !item.expanded) {
+      item.openDetails()
+      return
+    }
+    if (item && item.workbenchFeed) {
+      var targets = navigationTargets()
+      for (var i = 0; i < targets.length; ++i) {
+        var parent = targets[i].item.parent
+        while (parent && parent !== item) parent = parent.parent
+        if (parent === item) { focusContentItem(targets[i].item); return }
+      }
+      return
+    }
     if (item && "activateFromKeyboard" in item)
       item.activateFromKeyboard()
   }
@@ -193,6 +225,16 @@ Panel {
     var item = root.navigationItem
     return Boolean(item && "workbenchEditor" in item
       && item.workbenchEditor === true && item.activeFocus)
+  }
+
+  function navigateBack() {
+    var row = root.navigationItem
+    while (row && !row.openDetails) row = row.parent
+    if (row && row.expanded) {
+      root.detailKey = ""
+      focusContentItem(row)
+    } else if (root.navigationLevel === "content") returnToSections()
+    else close()
   }
 
   function refresh() {
@@ -212,7 +254,14 @@ Panel {
 
   function setViewMode(mode) {
     if (root.viewMode === mode) return
+    root.detailKey = ""
+    root.navigationLevel = "sections"
+    root.navigationItem = null
     root.viewMode = mode
+    if (!root.busy) {
+      root.message = ""
+      root.messageError = false
+    }
     root.marketplaceConfirmation = ""
     ensureViewLoaded()
   }
@@ -605,16 +654,17 @@ Panel {
       anchors.fill: parent
       blocked: root.editorOwnsKeyboard()
       onMoveRequested: function(dx, dy) {
-        if (dx !== 0) root.switchSection(dx)
-        else if (root.navigationLevel === "content" && dy !== 0) root.moveContent(dy)
+        if (root.navigationLevel === "sections") {
+          if (dx !== 0) root.switchSection(dx)
+          else if (dy > 0) root.enterContent()
+        } else root.moveContent(dx, dy)
       }
       onActivateRequested: {
         if (root.navigationLevel === "sections") root.enterContent()
         else root.activateContent()
       }
       onCloseRequested: {
-        if (root.navigationLevel === "content") root.returnToSections()
-        else root.close()
+        root.navigateBack()
       }
       onTabRequested: function(direction) { root.switchPanel(direction) }
       onTextKey: function(text) {
@@ -648,7 +698,7 @@ Panel {
               }
               Text {
                 text: root.marketplaceOpen
-                  ? root.marketplaceMatched + " of " + root.marketplaceTotal + " official catalogue listings"
+                  ? root.marketplaceResults.length + " shown · " + root.marketplaceMatched + " catalogue matches"
                   : root.installedOpen
                     ? root.installedCount + " plugins discovered by Omarchy"
                     : root.updatesOpen
@@ -827,6 +877,7 @@ Panel {
 
               TextInput {
                 id: marketplaceSearchInput
+                property bool workbenchControl: true
                 property bool workbenchEditor: true
                 activeFocusOnTab: true
                 width: parent.width - marketplaceSearchButton.width - marketplaceRefreshButton.width - Style.space(16)
@@ -846,6 +897,8 @@ Panel {
                   }
                 }
                 Keys.onEscapePressed: root.returnToSections()
+                Keys.onDownPressed: root.moveContent(0, 1)
+                Keys.onUpPressed: root.moveContent(0, -1)
 
                 Text {
                   anchors.verticalCenter: parent.verticalCenter
@@ -1003,7 +1056,7 @@ Panel {
 
           Item {
             width: parent.width
-            height: parent.height - y
+            height: Math.max(0, parent.height - y)
 
             ListView {
               id: marketplaceList
@@ -1013,13 +1066,22 @@ Panel {
               spacing: Style.space(8)
               boundsBehavior: Flickable.StopAtBounds
               reuseItems: true
-              cacheBuffer: Math.max(0, height)
-              model: root.marketplaceResults
+              cacheBuffer: 0
+              model: root.marketplaceOpen ? root.marketplaceResults : []
 
-              delegate: MarketplaceCard {
+              delegate: ResultRow {
+                id: marketplaceRow
+                required property int index
+                property var workbenchFeed: marketplaceList
+                property int workbenchIndex: index
                 required property var modelData
                 width: marketplaceList.width
-                plugin: modelData
+                rowKey: "discover:" + modelData.id
+                title: modelData.name
+                summary: modelData.builtIn ? "Built in" : modelData.installed ? "Installed" : modelData.category
+                detailComponent: Component {
+                  MarketplaceCard { plugin: marketplaceRow.modelData; workbenchControl: false }
+                }
               }
             }
 
@@ -1045,13 +1107,22 @@ Panel {
               spacing: Style.space(8)
               boundsBehavior: Flickable.StopAtBounds
               reuseItems: true
-              cacheBuffer: Math.max(0, height)
-              model: root.visibleInstalledRows
+              cacheBuffer: 0
+              model: root.installedOpen ? root.visibleInstalledRows : []
 
-              delegate: InstalledCard {
+              delegate: ResultRow {
+                id: installedRow
+                required property int index
+                property var workbenchFeed: installedList
+                property int workbenchIndex: index
                 required property var modelData
                 width: installedList.width
-                row: modelData
+                rowKey: "installed:" + modelData.plugin.id
+                title: modelData.plugin.name || modelData.plugin.id
+                summary: (modelData.plugin.enabled ? "Enabled" : "Disabled") + " · " + modelData.plugin.management
+                detailComponent: Component {
+                  InstalledCard { row: installedRow.modelData; workbenchControl: false }
+                }
               }
             }
 
@@ -1063,13 +1134,22 @@ Panel {
               spacing: Style.space(8)
               boundsBehavior: Flickable.StopAtBounds
               reuseItems: true
-              cacheBuffer: Math.max(0, height)
-              model: root.reviewUpdateRows
+              cacheBuffer: 0
+              model: root.updatesOpen ? root.reviewUpdateRows : []
 
-              delegate: UpdateCard {
+              delegate: ResultRow {
+                id: updateRow
+                required property int index
+                property var workbenchFeed: updateList
+                property int workbenchIndex: index
                 required property var modelData
                 width: updateList.width
-                entry: modelData
+                rowKey: "updates:" + (modelData.kind === "git" ? modelData.update.id : modelData.plugin.id)
+                title: modelData.kind === "git" ? modelData.update.id : (modelData.plugin.name || modelData.plugin.id)
+                summary: modelData.kind === "git" ? modelData.update.state : "Marketplace update"
+                detailComponent: Component {
+                  UpdateCard { entry: updateRow.modelData; workbenchControl: false }
+                }
               }
 
               footer: Column {
@@ -1135,13 +1215,22 @@ Panel {
               spacing: Style.space(8)
               boundsBehavior: Flickable.StopAtBounds
               reuseItems: true
-              cacheBuffer: Math.max(0, height)
-              model: root.projects
+              cacheBuffer: 0
+              model: root.buildOpen ? root.projects : []
 
-              delegate: ProjectCard {
+              delegate: ResultRow {
+                id: projectRow
+                required property int index
+                property var workbenchFeed: projectList
+                property int workbenchIndex: index
                 required property var modelData
                 width: projectList.width
-                project: modelData
+                rowKey: "build:" + modelData.id
+                title: modelData.name || modelData.id
+                summary: modelData.deployment || "Not deployed"
+                detailComponent: Component {
+                  ProjectCard { project: projectRow.modelData; workbenchControl: false }
+                }
               }
 
               footer: Column {
@@ -1207,6 +1296,7 @@ Panel {
     id: actionButton
     property string label: ""
     property bool workbenchSection: false
+    property bool workbenchControl: true
     signal triggered()
     activeFocusOnTab: true
     implicitWidth: buttonLabel.implicitWidth + Style.space(18)
@@ -1305,7 +1395,8 @@ Panel {
 
     Keys.onPressed: function(event) {
       if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
-        modeTab.triggered()
+        root.setViewMode(modeTab === discoverTab ? "discover" : modeTab === installedTab ? "installed" : modeTab === updatesTab ? "updates" : "build")
+        root.enterContent()
         event.accepted = true
       } else event.accepted = false
     }
@@ -1333,6 +1424,7 @@ Panel {
 
     TextInput {
       id: fieldInput
+      property bool workbenchControl: true
       property bool workbenchEditor: true
       activeFocusOnTab: true
       anchors.fill: parent
@@ -1353,6 +1445,8 @@ Panel {
         }
       }
       Keys.onEscapePressed: root.returnToSections()
+      Keys.onDownPressed: root.moveContent(0, 1)
+      Keys.onUpPressed: root.moveContent(0, -1)
 
       Text {
         anchors.verticalCenter: parent.verticalCenter
@@ -1365,7 +1459,104 @@ Panel {
     }
   }
 
-  component InstalledCard: Rectangle {
+  component ResultRow: NavigationCard {
+    id: resultRow
+    required property string rowKey
+    required property string title
+    required property string summary
+    required property Component detailComponent
+    readonly property bool expanded: root.detailKey === rowKey
+    implicitHeight: Style.space(48) + (expanded ? details.height + Style.space(6) : 0)
+    radius: Style.cornerRadius
+    color: activeFocus ? root.accentWash : root.surfaceSubtle
+    border.width: 1
+    border.color: root.borderSubtle
+
+    function openDetails() {
+      root.detailKey = rowKey
+      root.focusContentItem(resultRow)
+    }
+
+    Item {
+      width: parent.width
+      height: Style.space(48)
+      Column {
+        anchors.left: parent.left
+        anchors.right: chevron.left
+        anchors.verticalCenter: parent.verticalCenter
+        anchors.leftMargin: Style.space(10)
+        anchors.rightMargin: Style.space(10)
+        spacing: Style.space(2)
+        Text {
+          width: parent.width
+          text: resultRow.title
+          textFormat: Text.PlainText
+          elide: Text.ElideRight
+          color: root.barForeground
+          font.family: root.bar ? root.bar.fontFamily : Style.font.family
+          font.pixelSize: Style.font.body
+          font.bold: true
+        }
+        Text {
+          width: parent.width
+          text: resultRow.summary
+          textFormat: Text.PlainText
+          elide: Text.ElideRight
+          color: root.textMuted
+          font.family: root.bar ? root.bar.fontFamily : Style.font.family
+          font.pixelSize: Style.font.caption
+        }
+      }
+      Text {
+        id: chevron
+        anchors.right: parent.right
+        anchors.rightMargin: Style.space(12)
+        anchors.verticalCenter: parent.verticalCenter
+        text: resultRow.expanded ? "⌄" : "›"
+        color: root.textMuted
+      }
+      TapHandler {
+        onTapped: {
+          if (resultRow.expanded) root.detailKey = ""
+          else resultRow.openDetails()
+          root.focusContentItem(resultRow)
+        }
+      }
+    }
+    Loader {
+      id: details
+      y: Style.space(48)
+      width: parent.width
+      active: resultRow.expanded
+      sourceComponent: active ? resultRow.detailComponent : null
+      onLoaded: Qt.callLater(function() {
+        if (resultRow.expanded) root.focusContentItem(resultRow)
+      })
+    }
+  }
+
+  component NavigationCard: Rectangle {
+    id: navigationCard
+    property bool workbenchControl: true
+    activeFocusOnTab: workbenchControl
+    onActiveFocusChanged: {
+      if (activeFocus) {
+        root.navigationLevel = "content"
+        root.navigationItem = navigationCard
+      }
+    }
+    Rectangle {
+      anchors.fill: parent
+      color: "transparent"
+      border.color: Color.accent
+      border.width: 2
+      radius: parent.radius
+      visible: parent.activeFocus
+      z: 10
+    }
+  }
+
+  component InstalledCard: NavigationCard {
     id: installedCard
     required property var row
     readonly property var plugin: row.plugin
@@ -1513,7 +1704,7 @@ Panel {
     }
   }
 
-  component ProjectCard: Rectangle {
+  component ProjectCard: NavigationCard {
     id: card
     required property var project
     property bool expanded: false
@@ -1694,7 +1885,7 @@ Panel {
     }
   }
 
-  component UpdateCard: Rectangle {
+  component UpdateCard: NavigationCard {
     id: updateCard
     required property var entry
     readonly property bool marketplaceManaged: entry.kind === "marketplace"
@@ -1812,7 +2003,7 @@ Panel {
     }
   }
 
-  component MarketplaceCard: Rectangle {
+  component MarketplaceCard: NavigationCard {
     id: marketplaceCard
     required property var plugin
     implicitHeight: marketplaceCardContent.implicitHeight + Style.space(18)
