@@ -19,6 +19,9 @@ Panel {
   property string installedQuery: ""
   property bool updatesChecked: false
   property bool portfolioLoaded: false
+  property bool marketplaceAttempted: false
+  property bool portfolioAttempted: false
+  property bool projectsAttempted: false
   property string viewMode: "discover"
   property bool marketplaceLoaded: false
   property var marketplaceResults: []
@@ -39,6 +42,8 @@ Panel {
   property bool showBuilderSetup: false
   property bool createProjectOpen: true
   property string newPluginKind: "panel"
+  property string navigationLevel: "sections"
+  property var navigationItem: null
   property string pendingAction: ""
   readonly property int projectCount: projects.length
   readonly property bool buildOpen: viewMode === "build"
@@ -60,15 +65,14 @@ Panel {
     return { kind: "marketplace", update: null, plugin: plugin }
   }))
   readonly property var installedRows: installedPlugins.map(function(plugin) {
-    var update = null
-    for (var index = 0; index < pluginUpdates.length; index += 1) {
-      if (pluginUpdates[index].id === plugin.id) {
-        update = pluginUpdates[index]
-        break
-      }
-    }
+    var update = updatesById[plugin.id] || null
     return { plugin: plugin, update: update }
   })
+  readonly property var updatesById: {
+    var result = Object.create(null)
+    pluginUpdates.forEach(function(update) { result[update.id] = update })
+    return result
+  }
   readonly property int installedCount: installedRows.length
   readonly property var visibleInstalledRows: installedRows.filter(function(row) {
     var query = root.installedQuery.trim().toLowerCase()
@@ -85,9 +89,22 @@ Panel {
   readonly property color accentWash: Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.14)
 
   function open() {
+    root.navigationLevel = "sections"
+    root.navigationItem = null
     root.controller.show()
-    refreshView()
+    ensureViewLoaded()
   }
+
+  // Opening and navigation only read local data. Network work is explicit.
+  // Keep successful results in memory and avoid retry loops after failures.
+  function ensureViewLoaded() {
+    if (!root.opened || root.busy || root.pendingAction || !root.helperPath) return
+    if (root.marketplaceOpen && !root.marketplaceAttempted) searchMarketplace()
+    else if ((root.installedOpen || root.updatesOpen) && !root.portfolioAttempted) loadPortfolio()
+    else if (root.buildOpen && !root.projectsAttempted) refresh()
+  }
+
+  onBusyChanged: if (!root.busy) Qt.callLater(root.ensureViewLoaded)
 
   function close() {
     root.controller.hide()
@@ -104,8 +121,83 @@ Panel {
     return false
   }
 
+  function switchSection(direction) {
+    var sections = ["discover", "installed", "updates", "build"]
+    var index = sections.indexOf(root.viewMode)
+    if (index < 0) index = 0
+    root.setViewMode(sections[(index + direction + sections.length) % sections.length])
+    root.navigationLevel = "sections"
+    root.navigationItem = null
+    keyCatcher.forceActiveFocus()
+  }
+
+  function returnToSections() {
+    root.navigationLevel = "sections"
+    root.navigationItem = null
+    keyCatcher.forceActiveFocus()
+  }
+
+  function isSectionItem(item) {
+    return item && "workbenchSection" in item && item.workbenchSection === true
+  }
+
+  function focusContentItem(item) {
+    if (!item || root.isSectionItem(item)) return false
+    root.navigationLevel = "content"
+    root.navigationItem = item
+    item.forceActiveFocus()
+    return true
+  }
+
+  function enterContent() {
+    var candidate = buildTab.nextItemInFocusChain(true)
+    var guard = 0
+    while (candidate && guard < 256) {
+      if (!root.isSectionItem(candidate) && candidate.visible && candidate.enabled)
+        return root.focusContentItem(candidate)
+      candidate = candidate.nextItemInFocusChain(true)
+      guard += 1
+    }
+    return false
+  }
+
+  function moveContent(direction) {
+    if (!root.navigationItem || !root.navigationItem.activeFocus) {
+      root.enterContent()
+      return
+    }
+    var candidate = root.navigationItem.nextItemInFocusChain(direction > 0)
+    var guard = 0
+    while (candidate && guard < 256) {
+      if (root.isSectionItem(candidate)) {
+        root.returnToSections()
+        return
+      }
+      if (candidate.visible && candidate.enabled) {
+        root.focusContentItem(candidate)
+        return
+      }
+      candidate = candidate.nextItemInFocusChain(direction > 0)
+      guard += 1
+    }
+    root.returnToSections()
+  }
+
+  function activateContent() {
+    var item = root.navigationItem
+    if (item && "activateFromKeyboard" in item)
+      item.activateFromKeyboard()
+  }
+
+  function editorOwnsKeyboard() {
+    var item = root.navigationItem
+    return Boolean(item && "workbenchEditor" in item
+      && item.workbenchEditor === true && item.activeFocus)
+  }
+
   function refresh() {
     if (!root.helperPath || refreshProcess.running) return
+    root.projectsAttempted = true
     root.refreshOutput = ""
     refreshProcess.command = [root.helperPath, "status", "--json"]
     refreshProcess.running = true
@@ -119,19 +211,13 @@ Panel {
   }
 
   function setViewMode(mode) {
-    if (root.busy || root.viewMode === mode) return
+    if (root.viewMode === mode) return
     root.viewMode = mode
     root.marketplaceConfirmation = ""
-    if (mode === "installed") loadPortfolio()
-    else if (mode === "updates") refreshUpdates()
-    else if (mode === "discover") {
-      if (root.marketplaceLoaded) searchMarketplace()
-      else refreshMarketplace()
-    } else refresh()
+    ensureViewLoaded()
   }
 
   function refreshInstalled() {
-    checkUpdates()
     loadPortfolio()
   }
 
@@ -142,6 +228,7 @@ Panel {
 
   function loadPortfolio() {
     if (!root.helperPath || portfolioProcess.running) return
+    root.portfolioAttempted = true
     root.portfolioOutput = ""
     portfolioProcess.command = [root.helperPath, "installed", "--json"]
     portfolioProcess.running = true
@@ -299,6 +386,7 @@ Panel {
 
   function searchMarketplace() {
     if (root.busy || !root.helperPath) return
+    root.marketplaceAttempted = true
     root.actionOutput = ""
     root.actionError = ""
     root.message = "Searching the cached marketplace…"
@@ -405,7 +493,17 @@ Panel {
     root.message = parsed && parsed.error ? parsed.error
       : parsed && parsed.message ? parsed.message
       : errorText || text || (exitCode === 0 ? "Action completed" : "Action failed")
+    if (root.pendingAction === "marketplace-search" && root.message.indexOf("not cached") !== -1) {
+      root.message = "No saved catalogue yet. Click Refresh to download marketplace listings."
+      root.messageError = false
+    }
     if (exitCode === 0) {
+      // Mutations can change the other views; reload them on their next visit.
+      root.portfolioAttempted = false
+      root.projectsAttempted = false
+      root.marketplaceAttempted = false
+      root.pluginUpdates = []
+      root.updatesChecked = false
       pathInput.text = ""
       if (root.pendingAction === "new") {
         newNameInput.text = ""
@@ -485,7 +583,10 @@ Panel {
       onStreamFinished: root.actionError = String(text || "")
     }
     onExited: function(exitCode) {
-      Qt.callLater(function() { root.completeAction(exitCode) })
+      Qt.callLater(function() {
+        root.completeAction(exitCode)
+        Qt.callLater(root.ensureViewLoaded)
+      })
     }
   }
 
@@ -495,41 +596,30 @@ Panel {
     owner: root.hostWidget || root
     bar: root.bar
     open: root.opened
+    focusTarget: keyCatcher
     contentWidth: panel.fittedContentWidth(Style.space(720))
     contentHeight: panel.fittedContentHeight(Style.space(540))
 
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
-      onCloseRequested: root.close()
+      blocked: root.editorOwnsKeyboard()
+      onMoveRequested: function(dx, dy) {
+        if (dx !== 0) root.switchSection(dx)
+        else if (root.navigationLevel === "content" && dy !== 0) root.moveContent(dy)
+      }
+      onActivateRequested: {
+        if (root.navigationLevel === "sections") root.enterContent()
+        else root.activateContent()
+      }
+      onCloseRequested: {
+        if (root.navigationLevel === "content") root.returnToSections()
+        else root.close()
+      }
       onTabRequested: function(direction) { root.switchPanel(direction) }
-      Keys.onPressed: function(event) {
-        if (event.modifiers === Qt.ControlModifier && event.key === Qt.Key_1) {
-          root.setViewMode("discover")
-        } else if (event.modifiers === Qt.ControlModifier && event.key === Qt.Key_2) {
-          root.setViewMode("installed")
-        } else if (event.modifiers === Qt.ControlModifier && event.key === Qt.Key_3) {
-          root.setViewMode("updates")
-        } else if (event.modifiers === Qt.ControlModifier && event.key === Qt.Key_4) {
-          root.setViewMode("build")
-        } else if (event.modifiers !== Qt.NoModifier) {
-          return
-        } else if (event.key === Qt.Key_Down || event.key === Qt.Key_J) {
-          root.scrollFeed(Style.space(56))
-        } else if (event.key === Qt.Key_Up || event.key === Qt.Key_K) {
-          root.scrollFeed(-Style.space(56))
-        } else if (event.key === Qt.Key_PageDown) {
-          root.scrollFeed(root.activeFeed().height * 0.82)
-        } else if (event.key === Qt.Key_PageUp) {
-          root.scrollFeed(-root.activeFeed().height * 0.82)
-        } else if (event.key === Qt.Key_Home) {
-          root.scrollFeedEdge(false)
-        } else if (event.key === Qt.Key_End) {
-          root.scrollFeedEdge(true)
-        } else {
-          return
-        }
-        event.accepted = true
+      onTextKey: function(text) {
+        if (text === "[") root.switchSection(-1)
+        else if (text === "]") root.switchSection(1)
       }
 
       Rectangle {
@@ -585,6 +675,7 @@ Panel {
             spacing: Style.space(6)
 
             ModeTab {
+              id: discoverTab
               width: (lifecycleRail.width - Style.space(18)) / 4
               title: "1  DISCOVER"
               detail: root.marketplaceLoaded
@@ -593,6 +684,7 @@ Panel {
               onTriggered: root.setViewMode("discover")
             }
             ModeTab {
+              id: installedTab
               width: (lifecycleRail.width - Style.space(18)) / 4
               title: "2  INSTALLED"
               detail: root.installedCount + " plugins"
@@ -600,6 +692,7 @@ Panel {
               onTriggered: root.setViewMode("installed")
             }
             ModeTab {
+              id: updatesTab
               width: (lifecycleRail.width - Style.space(18)) / 4
               title: "3  UPDATES"
               detail: root.totalUpdateCount > 0
@@ -608,6 +701,7 @@ Panel {
               onTriggered: root.setViewMode("updates")
             }
             ModeTab {
+              id: buildTab
               width: (lifecycleRail.width - Style.space(18)) / 4
               title: "4  BUILD"
               detail: root.projectCount + (root.projectCount === 1 ? " project" : " projects")
@@ -733,6 +827,8 @@ Panel {
 
               TextInput {
                 id: marketplaceSearchInput
+                property bool workbenchEditor: true
+                activeFocusOnTab: true
                 width: parent.width - marketplaceSearchButton.width - marketplaceRefreshButton.width - Style.space(16)
                 height: parent.height
                 color: root.barForeground
@@ -743,6 +839,13 @@ Panel {
                 clip: true
                 selectByMouse: true
                 onAccepted: root.searchMarketplace()
+                onActiveFocusChanged: {
+                  if (activeFocus) {
+                    root.navigationLevel = "content"
+                    root.navigationItem = marketplaceSearchInput
+                  }
+                }
+                Keys.onEscapePressed: root.returnToSections()
 
                 Text {
                   anchors.verticalCenter: parent.verticalCenter
@@ -910,7 +1013,7 @@ Panel {
               spacing: Style.space(8)
               boundsBehavior: Flickable.StopAtBounds
               reuseItems: true
-              cacheBuffer: height
+              cacheBuffer: Math.max(0, height)
               model: root.marketplaceResults
 
               delegate: MarketplaceCard {
@@ -942,7 +1045,7 @@ Panel {
               spacing: Style.space(8)
               boundsBehavior: Flickable.StopAtBounds
               reuseItems: true
-              cacheBuffer: height
+              cacheBuffer: Math.max(0, height)
               model: root.visibleInstalledRows
 
               delegate: InstalledCard {
@@ -960,7 +1063,7 @@ Panel {
               spacing: Style.space(8)
               boundsBehavior: Flickable.StopAtBounds
               reuseItems: true
-              cacheBuffer: height
+              cacheBuffer: Math.max(0, height)
               model: root.reviewUpdateRows
 
               delegate: UpdateCard {
@@ -1032,7 +1135,7 @@ Panel {
               spacing: Style.space(8)
               boundsBehavior: Flickable.StopAtBounds
               reuseItems: true
-              cacheBuffer: height
+              cacheBuffer: Math.max(0, height)
               model: root.projects
 
               delegate: ProjectCard {
@@ -1103,6 +1206,7 @@ Panel {
   component WorkbenchButton: Rectangle {
     id: actionButton
     property string label: ""
+    property bool workbenchSection: false
     signal triggered()
     activeFocusOnTab: true
     implicitWidth: buttonLabel.implicitWidth + Style.space(18)
@@ -1114,6 +1218,17 @@ Panel {
       ? Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.30)
       : Qt.rgba(root.barForeground.r, root.barForeground.g, root.barForeground.b, 0.09)
     opacity: enabled ? 1 : 0.45
+
+    function activateFromKeyboard() {
+      if (actionButton.enabled) actionButton.triggered()
+    }
+
+    onActiveFocusChanged: {
+      if (activeFocus) {
+        root.navigationLevel = "content"
+        root.navigationItem = actionButton
+      }
+    }
 
     Text {
       id: buttonLabel
@@ -1146,6 +1261,7 @@ Panel {
     property string title: ""
     property string detail: ""
     property bool active: false
+    property bool workbenchSection: true
     signal triggered()
     activeFocusOnTab: true
     implicitHeight: Style.space(48)
@@ -1157,6 +1273,13 @@ Panel {
       : active ? Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.46) : root.borderSubtle
     border.width: 1
     radius: Style.cornerRadius
+
+    onActiveFocusChanged: {
+      if (activeFocus) {
+        root.navigationLevel = "sections"
+        root.navigationItem = null
+      }
+    }
 
     Column {
       anchors.centerIn: parent
@@ -1189,7 +1312,6 @@ Panel {
     HoverHandler { id: modeHover }
     TapHandler {
       id: modeTap
-      enabled: !root.busy
       onTapped: {
         modeTab.forceActiveFocus()
         modeTab.triggered()
@@ -1211,6 +1333,8 @@ Panel {
 
     TextInput {
       id: fieldInput
+      property bool workbenchEditor: true
+      activeFocusOnTab: true
       anchors.fill: parent
       anchors.leftMargin: Style.space(8)
       anchors.rightMargin: Style.space(8)
@@ -1222,6 +1346,13 @@ Panel {
       clip: true
       selectByMouse: true
       onAccepted: field.accepted()
+      onActiveFocusChanged: {
+        if (activeFocus) {
+          root.navigationLevel = "content"
+          root.navigationItem = fieldInput
+        }
+      }
+      Keys.onEscapePressed: root.returnToSections()
 
       Text {
         anchors.verticalCenter: parent.verticalCenter
