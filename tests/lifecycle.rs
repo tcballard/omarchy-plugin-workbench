@@ -440,6 +440,47 @@ fn trusted_tools_ignore_path_and_dangerous_git_environment() {
 }
 
 #[test]
+fn inventory_keeps_desktop_context_but_not_executable_overrides() {
+    let harness = Harness::new();
+    let tools = harness.root.path().join("desktop-tools");
+    fs::create_dir_all(&tools).unwrap();
+    let executable = tools.join("omarchy");
+    fs::write(
+        &executable,
+        r#"#!/bin/sh
+test "$OMARCHY_PATH" = /test/omarchy || exit 21
+test "$XDG_RUNTIME_DIR" = /test/runtime || exit 22
+test "$WAYLAND_DISPLAY" = wayland-test || exit 23
+test "${BASH_ENV-unset}" = unset || exit 24
+test "${GIT_DIR-unset}" = unset || exit 25
+printf '[]'
+"#,
+    )
+    .unwrap();
+    fs::set_permissions(&executable, fs::Permissions::from_mode(0o755)).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_omarchy-plugin-workbench"))
+        .args(["installed", "--json"])
+        .env("HOME", &harness.home)
+        .env("XDG_CONFIG_HOME", harness.home.join(".config"))
+        .env("XDG_STATE_HOME", harness.home.join(".local/state"))
+        .env("OMARCHY_WORKBENCH_TEST_TOOLS", &tools)
+        .env("OMARCHY_PATH", "/test/omarchy")
+        .env("XDG_RUNTIME_DIR", "/test/runtime")
+        .env("WAYLAND_DISPLAY", "wayland-test")
+        .env("BASH_ENV", "/test/untrusted")
+        .env("GIT_DIR", "/test/untrusted")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["ok"], true);
+}
+
+#[test]
 fn register_link_snapshot_rollback_and_undeploy() {
     let harness = Harness::new();
     let canonical_project = harness.project.canonicalize().unwrap();

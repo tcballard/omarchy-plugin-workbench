@@ -14,8 +14,8 @@ function panel() {
   for (const [property, mode] of Object.entries({marketplaceOpen: 'discover', installedOpen: 'installed', updatesOpen: 'updates', buildOpen: 'build'})) {
     Object.defineProperty(root, property, { get: () => root.viewMode === mode });
   }
-  const context = vm.createContext({ root, keyCatcher: { forceActiveFocus() { calls.push('focus'); } } });
-  for (const name of ['open', 'ensureViewLoaded', 'setViewMode', 'refreshInstalled', 'refreshView', 'refreshUpdates', 'switchSection', 'returnToSections', 'editorOwnsKeyboard', 'activateContent']) {
+  const context = vm.createContext({ root, ListView: {Contain: 1}, keyCatcher: { forceActiveFocus() { calls.push('focus'); } } });
+  for (const name of ['open', 'ensureViewLoaded', 'setViewMode', 'refreshInstalled', 'refreshView', 'refreshUpdates', 'switchSection', 'returnToSections', 'editorOwnsKeyboard', 'activateContent', 'navigateBack', 'moveContent']) {
     const start = source.indexOf(`  function ${name}(`);
     assert.notEqual(start, -1);
     const end = source.indexOf('\n  }', start) + 4;
@@ -93,4 +93,48 @@ test('content activation targets the selected control', () => {
   root.navigationItem = {activateFromKeyboard() { activated++; }};
   root.activateContent();
   assert.equal(activated, 1);
+});
+
+const geometry = vm.createContext({});
+vm.runInContext(fs.readFileSync(`${__dirname}/../Navigation.js`, 'utf8').replace('.pragma library', ''), geometry);
+function rect(item, x, y, width = 100, height = 30) {
+  return {item, x, y, width, height, cx: x + width / 2, cy: y + height / 2};
+}
+test('arrow navigation prefers the visible row and column over tab order', () => {
+  const current = rect('current', 0, 0);
+  const right = rect('right', 120, 0);
+  const down = rect('down', 0, 60);
+  const diagonal = rect('diagonal', 120, 40);
+  assert.equal(geometry.nearest([diagonal, down, right], current, 1, 0), 'right');
+  assert.equal(geometry.nearest([right, diagonal, down], current, 0, 1), 'down');
+  assert.equal(geometry.nearest([current], right, -1, 0), 'current');
+  assert.equal(geometry.nearest([current], down, 0, -1), 'current');
+});
+test('arrow navigation stops at an edge instead of cycling unrelated controls', () => {
+  assert.equal(geometry.nearest([rect('right', 120, 0)], rect('current', 0, 0), -1, 0), null);
+});
+test('Enter opens row details without activating a plugin operation', () => {
+  const {root} = panel();
+  let opened = 0;
+  root.navigationItem = {expanded: false, openDetails() { opened++; }};
+  root.activateContent();
+  assert.equal(opened, 1);
+});
+test('changing sections closes details from the previous section', () => {
+  const {root} = panel();
+  root.detailKey = 'discover:example';
+  root.setViewMode('installed');
+  assert.equal(root.detailKey, '');
+});
+test('offscreen row layout completes before keyboard focus moves', () => {
+  const {root} = panel();
+  const order = [];
+  const target = {};
+  const feed = {count: 20, positionViewAtIndex(index) { order.push(['scroll', index]); },
+    forceLayout() { order.push(['layout']); }, itemAtIndex(index) { order.push(['lookup', index]); return target; }};
+  root.navigationItem = {activeFocus: true, workbenchFeed: feed, workbenchIndex: 5};
+  root.focusContentItem = item => { assert.equal(item, target); order.push(['focus']); };
+  root.moveContent(0, 1);
+  assert.equal(feed.currentIndex, 6);
+  assert.deepEqual(order, [['scroll', 6], ['layout'], ['lookup', 6], ['focus']]);
 });
