@@ -14,8 +14,8 @@ function panel() {
   for (const [property, mode] of Object.entries({marketplaceOpen: 'discover', installedOpen: 'installed', updatesOpen: 'updates', buildOpen: 'build'})) {
     Object.defineProperty(root, property, { get: () => root.viewMode === mode });
   }
-  const context = vm.createContext({ root, keyCatcher: { forceActiveFocus() { calls.push('focus'); } } });
-  for (const name of ['open', 'ensureViewLoaded', 'setViewMode', 'refreshInstalled', 'refreshView', 'refreshUpdates', 'switchSection', 'returnToSections', 'editorOwnsKeyboard', 'activateContent', 'navigateBack']) {
+  const context = vm.createContext({ root, ListView: {Contain: 1}, keyCatcher: { forceActiveFocus() { calls.push('focus'); } } });
+  for (const name of ['open', 'ensureViewLoaded', 'setViewMode', 'refreshInstalled', 'refreshView', 'refreshUpdates', 'switchSection', 'returnToSections', 'editorOwnsKeyboard', 'activateContent', 'navigateBack', 'moveContent']) {
     const start = source.indexOf(`  function ${name}(`);
     assert.notEqual(start, -1);
     const end = source.indexOf('\n  }', start) + 4;
@@ -125,4 +125,16 @@ test('changing sections closes details from the previous section', () => {
   root.detailKey = 'discover:example';
   root.setViewMode('installed');
   assert.equal(root.detailKey, '');
+});
+test('offscreen row layout completes before keyboard focus moves', () => {
+  const {root} = panel();
+  const order = [];
+  const target = {};
+  const feed = {count: 20, positionViewAtIndex(index) { order.push(['scroll', index]); },
+    forceLayout() { order.push(['layout']); }, itemAtIndex(index) { order.push(['lookup', index]); return target; }};
+  root.navigationItem = {activeFocus: true, workbenchFeed: feed, workbenchIndex: 5};
+  root.focusContentItem = item => { assert.equal(item, target); order.push(['focus']); };
+  root.moveContent(0, 1);
+  assert.equal(feed.currentIndex, 6);
+  assert.deepEqual(order, [['scroll', 6], ['layout'], ['lookup', 6], ['focus']]);
 });

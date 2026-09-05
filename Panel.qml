@@ -191,9 +191,11 @@ Panel {
       if (index >= 0 && index < feed.count) {
         feed.currentIndex = index
         feed.positionViewAtIndex(index, ListView.Contain)
-        Qt.callLater(function() {
-          if (root.opened && feed.visible && feed.currentItem) focusContentItem(feed.currentItem)
-        })
+        // Complete delegate creation before moving focus. Deferring this can
+        // lose focus when the previously selected row is recycled offscreen.
+        feed.forceLayout()
+        var target = feed.itemAtIndex(index)
+        if (target) root.focusContentItem(target)
         return
       }
     }
