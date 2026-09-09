@@ -587,6 +587,17 @@ pub fn update_managed(
     if !ancestry.ok {
         bail!("reviewed marketplace revision is not a fast-forward from the installed snapshot");
     }
+    crate::updates::validate_staged(paths, &directory, reviewed_revision, id)?;
+    if git_stdout(paths, &directory, &["rev-parse", "HEAD"])? != current
+        || !git_stdout(
+            paths,
+            &directory,
+            &["status", "--porcelain", "--untracked-files=normal"],
+        )?
+        .is_empty()
+    {
+        bail!("managed checkout changed during staged validation");
+    }
     let merge = run_git(
         paths,
         &directory,
@@ -599,13 +610,25 @@ pub fn update_managed(
         );
     }
     if let Err(error) = validate_managed_checkout(paths, id, &directory, reviewed_revision) {
-        let _ = run_git(paths, &directory, &["reset", "--hard", &current]);
+        let rollback = run_git(paths, &directory, &["reset", "--hard", &current])?;
+        if !rollback.ok {
+            bail!(
+                "marketplace update failed ({error:#}); rollback failed: {}",
+                check_output(&rollback)
+            );
+        }
         bail!("marketplace update failed validation and was rolled back: {error:#}");
     }
     receipt.installed_revision = reviewed_revision.to_owned();
     receipt.updated_at_unix = now_unix();
     if let Err(error) = save_receipt(paths, &receipt) {
-        let _ = run_git(paths, &directory, &["reset", "--hard", &current]);
+        let rollback = run_git(paths, &directory, &["reset", "--hard", &current])?;
+        if !rollback.ok {
+            bail!(
+                "marketplace update failed ({error:#}); rollback failed: {}",
+                check_output(&rollback)
+            );
+        }
         return Err(error).context("update marketplace ownership receipt; checkout rolled back");
     }
     rescan_shell(paths)?;

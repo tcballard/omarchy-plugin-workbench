@@ -1,5 +1,6 @@
 mod coordination;
 mod deploy;
+mod drawer;
 mod inventory;
 mod manifest;
 mod marketplace;
@@ -34,6 +35,14 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Print the QML/helper compatibility contract.
+    Protocol,
+    /// Inspect the optional Drawer profile interface.
+    DrawerStatus,
+    /// Open Drawer on the current host.
+    DrawerOpen,
+    /// Select an existing Drawer-owned task profile.
+    DrawerProfile { id: String },
     /// Create and register a new personal plugin project.
     New {
         path: PathBuf,
@@ -315,9 +324,21 @@ fn main() {
 }
 
 fn run(cli: &Cli) -> Result<()> {
+    if matches!(cli.command, Command::Protocol) {
+        return emit(
+            cli.json,
+            &json!({"ok":true,"protocol":1}),
+            "workbench-protocol-1",
+        );
+    }
     let paths = AppPaths::discover()?;
     paths.ensure()?;
+    deploy::recover_pending(&paths)?;
     match &cli.command {
+        Command::Protocol => unreachable!(),
+        Command::DrawerStatus => print_json(&drawer::status()?),
+        Command::DrawerOpen => print_json(&drawer::configure(None)?),
+        Command::DrawerProfile { id } => print_json(&drawer::configure(Some(id))?),
         Command::New {
             path,
             id,

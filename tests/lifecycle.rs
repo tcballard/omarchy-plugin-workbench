@@ -911,7 +911,7 @@ fn update_applies_only_the_reviewed_revision_then_validates_and_rescans() {
 }
 
 #[test]
-fn update_refuses_stale_review_and_rolls_back_failed_validation() {
+fn update_refuses_stale_review_and_rejects_invalid_staging() {
     let harness = Harness::new();
     let (_origin, current, remote) = setup_installed_update(&harness);
     let (tools, log) = fake_omarchy_tools(&harness, false);
@@ -934,7 +934,8 @@ fn update_refuses_stale_review_and_rolls_back_failed_validation() {
         stale_error["error"]
             .as_str()
             .unwrap()
-            .contains("changed since review")
+            .contains("changed since review"),
+        "{stale_error}"
     );
     assert_eq!(
         git(&harness.installed_target(), &["rev-parse", "HEAD"]),
@@ -955,7 +956,12 @@ fn update_refuses_stale_review_and_rolls_back_failed_validation() {
     );
     assert!(!failed.status.success());
     let failure: Value = serde_json::from_slice(&failed.stdout).unwrap();
-    assert!(failure["error"].as_str().unwrap().contains("rolled back"));
+    assert!(
+        failure["error"]
+            .as_str()
+            .unwrap()
+            .contains("installed files unchanged")
+    );
     assert_eq!(
         git(&harness.installed_target(), &["rev-parse", "HEAD"]),
         current
@@ -1103,7 +1109,8 @@ fn marketplace_install_refuses_missing_confirmation_and_stale_review() {
         error["error"]
             .as_str()
             .unwrap()
-            .contains("changed since review")
+            .contains("changed since review"),
+        "{error}"
     );
     assert!(!log.exists() || !fs::read_to_string(&log).unwrap().contains("git "));
 }
@@ -1628,4 +1635,97 @@ fn ready_review_exports_a_shareable_exact_commit_dossier() {
     assert!(markdown.contains(&revision));
     assert!(markdown.contains("not certification"));
     assert!(PathBuf::from(dossier["jsonFile"].as_str().unwrap()).is_file());
+}
+
+#[test]
+fn snapshot_drift_is_reported_and_cannot_be_rolled_back_to() {
+    let h = Harness::new();
+    h.json(&["add", h.project.to_str().unwrap(), "--json"]);
+    h.json(&["snapshot", "io.test.workbench-demo", "--json"]);
+    let snapshot = fs::read_link(h.installed_target()).unwrap();
+    fs::write(snapshot.join("Panel.qml"), "altered historical bytes").unwrap();
+    let status = h.json(&["status", "--json"]);
+    assert!(status.to_string().contains("drifted"), "{status}");
+    h.json(&["link", "io.test.workbench-demo", "--json"]);
+    let result = h.run(&["rollback", "io.test.workbench-demo"]);
+    assert!(!result.status.success());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("drifted"));
+    assert_eq!(
+        fs::read_link(h.installed_target()).unwrap(),
+        h.project.canonicalize().unwrap()
+    );
+}
+
+#[test]
+fn interrupted_deployment_recovers_receipt_without_replacing_external_target() {
+    let h = Harness::new();
+    h.json(&["add", h.project.to_str().unwrap(), "--json"]);
+    h.json(&["link", "io.test.workbench-demo", "--json"]);
+    let state = h.home.join(".local/state/omarchy/plugin-workbench");
+    let receipt_path = state.join("deployments/io.test.workbench-demo.json");
+    let receipt: Value = serde_json::from_slice(&fs::read(&receipt_path).unwrap()).unwrap();
+    let journal = state.join("deployment-pending.json");
+    fs::write(
+        &journal,
+        serde_json::to_vec(&serde_json::json!({"receipt":receipt,"previous":null})).unwrap(),
+    )
+    .unwrap();
+    fs::remove_file(&receipt_path).unwrap();
+    h.json(&["status", "--json"]);
+    assert!(receipt_path.is_file());
+    assert!(!journal.exists());
+    fs::write(
+        &journal,
+        serde_json::to_vec(&serde_json::json!({"receipt":receipt,"previous":null})).unwrap(),
+    )
+    .unwrap();
+    fs::remove_file(h.installed_target()).unwrap();
+    fs::create_dir(h.installed_target()).unwrap();
+    assert!(!h.run(&["status"]).status.success());
+    assert!(h.installed_target().is_dir());
+    assert!(journal.exists());
+}
+
+#[test]
+fn drawer_interface_is_optional_and_rejects_unknown_profiles_before_ipc() {
+    let h = Harness::new();
+    let (tools, log) = fake_omarchy_tools(&h, true);
+    fs::write(
+        tools.join("omarchy"),
+        "#!/bin/sh\nprintf '%s\\n' '[{\"id\":\"spencerbull.drawer\",\"enabled\":true}]'\n",
+    )
+    .unwrap();
+    fs::write(tools.join("omarchy-shell"), r#"#!/bin/sh
+printf '%s\n' "$*" >> "$OMARCHY_TEST_LOG"
+if [ "$2" = status ]; then
+  printf '%s\n' '{"version":1,"supported":true,"activeProfile":"global","profiles":[{"id":"global","name":"Global"}],"hiddenIds":[],"mode":"space"}'
+else
+  printf 'true\n'
+fi
+"#).unwrap();
+    let result = h.run_with_tools(&["drawer-profile", "global", "--json"], &tools, &log);
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stdout)
+    );
+    assert!(
+        fs::read_to_string(&log)
+            .unwrap()
+            .contains("selectProfile global")
+    );
+    let rejected = h.run_with_tools(&["drawer-profile", "unknown", "--json"], &tools, &log);
+    assert!(!rejected.status.success());
+    assert!(
+        !fs::read_to_string(&log)
+            .unwrap()
+            .contains("selectProfile unknown")
+    );
+    fs::write(tools.join("omarchy"), "#!/bin/sh\nprintf '[]\\n'\n").unwrap();
+    let absent = h.run_with_tools(&["drawer-status", "--json"], &tools, &log);
+    assert!(absent.status.success());
+    assert_eq!(
+        serde_json::from_slice::<Value>(&absent.stdout).unwrap()["supported"],
+        false
+    );
 }

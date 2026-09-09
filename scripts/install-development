@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+repo=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
+"$repo/bin/omarchy-plugin-workbench" protocol >/dev/null
+"$repo/bin/omarchy-plugin-workbench" add "$repo"
+"$repo/bin/omarchy-plugin-workbench" link io.github.tcballard.plugin-workbench
+"$repo/bin/omarchy-plugin-workbench" enable io.github.tcballard.plugin-workbench

@@ -13,7 +13,7 @@ For development against this repository, build the helper and link the QML modul
 
 ```bash
 cargo build --workspace --locked --release
-omarchy plugin add "$(pwd)" --enable
+scripts/install-development
 ```
 
 Workbench deliberately leaves its project registry and deployment history behind. To remove that retained local data too, run:
@@ -34,7 +34,7 @@ Build supports these development loops explicitly:
 
 - **New plugin** creates a validated personal Panel, bar widget, or service starter at an explicit absolute path, initializes Git, and registers it without committing or replacing existing files.
 - **Live link** points Omarchy at the mutable plugin checkout for the fastest edit/reload loop.
-- **Snapshot** copies the plugin into an immutable, content-addressed deployment and atomically switches Omarchy to it. Previous managed deployments remain available for rollback.
+- **Snapshot** copies the plugin into a digest-verified deployment and atomically switches Omarchy to it. Previous managed deployments remain available for rollback.
 - **Test window** launches a disposable nested Hyprland compositor with an isolated Omarchy shell configuration and a live link to the project.
 
 The workbench does not scan your home directory, execute install hooks, invoke a shell for project checks, use `sudo`, publish plugins, or replace an installation it did not create. Marketplace discovery uses the official published catalogue; update discovery is limited to normal Git checkouts directly beneath Omarchy's documented plugins directory.
@@ -445,3 +445,20 @@ scripts/package.sh
 ## Security
 
 Omarchy plugins are unsandboxed code inside the long-running shell. Workbench reduces accidental mutation and command ambiguity; it is not a sandbox. Read [SECURITY.md](SECURITY.md) before adding execution features or installing third-party plugins.
+
+## Drawer integration and ownership
+
+Workbench owns building, testing and reviewed deployment. Omarchy owns plugin
+activation, ordering and service lifecycles. Drawer owns widget visibility and
+named task profiles; hiding a widget does not disable its plugin or polling.
+The optional `drawer-status`, `drawer-open` and `drawer-profile <id>` commands use
+Drawer scalar IPC version 1. No profile configuration is duplicated in Workbench.
+
+Snapshot receipts bind the staged bytes, entry types and modes to a full SHA-256.
+Status reports changed snapshots as drifted; rollback refuses them. Older receipts
+without a digest are unverified and require a fresh snapshot. Live-link rollback
+returns to the current source directory, not historical source bytes. Snapshot
+files remain owner-writable; the digest detects modification, not filesystem
+immutability. Interrupted switches retain `deployment-pending.json` and recover
+on the next invocation. Conflicting external changes leave the journal for manual
+inspection and are never overwritten.
