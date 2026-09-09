@@ -7,9 +7,10 @@ use crate::paths::{AppPaths, secure_dir};
 use crate::process::{capture_tool, command_exists};
 use crate::registry::{RegistryLock, now_unix};
 use anyhow::{Context, Result, bail};
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt, symlink};
 use std::path::{Path, PathBuf};
 use walkdir::{DirEntry, WalkDir};
@@ -75,6 +76,7 @@ pub fn deploy_live(paths: &AppPaths, project: &Project) -> Result<ActionReport> 
     let git = git_state(&project.project_root);
     let entry = DeploymentEntry {
         mode: DeploymentMode::LiveLink,
+        content_digest: None,
         target: project.plugin_root.clone(),
         revision: git.revision,
         dirty: git.dirty,
@@ -88,35 +90,45 @@ pub fn deploy_snapshot(paths: &AppPaths, project: &Project) -> Result<ActionRepo
     validate(project)?;
     secure_dir(&paths.plugins_dir)?;
     let git = git_state(&project.project_root);
-    let fingerprint = content_fingerprint(&project.plugin_root)?;
     let snapshot_parent = paths.snapshots_dir.join(&project.id);
     secure_dir(&snapshot_parent)?;
-    let snapshot_name = format!("{}-{}", now_unix(), &fingerprint[..12]);
-    let snapshot = unique_path(&snapshot_parent, &snapshot_name);
     let temporary = snapshot_parent.join(format!(".stage.{}", std::process::id()));
-    if temporary.exists() {
+    if temporary.exists() || temporary.is_symlink() {
         bail!("staging path already exists: {}", temporary.display());
     }
-    let copy_result = copy_tree(&project.plugin_root, &temporary);
-    if let Err(error) = copy_result {
-        let _ = fs::remove_dir_all(&temporary);
-        return Err(error);
-    }
-    fs::rename(&temporary, &snapshot).context("publish immutable plugin snapshot")?;
+    let staged = (|| -> Result<String> {
+        copy_tree(&project.plugin_root, &temporary)?;
+        let mut staged_project = project.clone();
+        staged_project.plugin_root = temporary.clone();
+        validate(&staged_project)?;
+        content_fingerprint(&temporary)
+    })();
+    let digest = match staged {
+        Ok(digest) => digest,
+        Err(error) => {
+            let _ = fs::remove_dir_all(&temporary);
+            return Err(error);
+        }
+    };
+    let snapshot_name = format!("{}-{}", now_unix(), &digest[..12]);
+    let snapshot = unique_path(&snapshot_parent, &snapshot_name);
+    fs::rename(&temporary, &snapshot).context("publish plugin snapshot")?;
+    fs::File::open(&snapshot_parent)?.sync_all()?;
     let entry = DeploymentEntry {
         mode: DeploymentMode::Snapshot,
+        content_digest: Some(digest),
         target: snapshot,
         revision: git.revision,
         dirty: git.dirty,
         deployed_at_unix: now_unix(),
     };
-    switch_deployment(paths, project, entry, "deployed immutable snapshot")
+    switch_deployment(paths, project, entry, "deployed verified snapshot")
 }
 
 pub fn rollback(paths: &AppPaths, project: &Project) -> Result<ActionReport> {
     let _lock = RegistryLock::acquire(paths)?;
     let receipt_path = paths.receipt_path(&project.id);
-    let mut receipt = load_receipt(&receipt_path)?
+    let mut receipt = load_receipt_for(paths, &project.id)?
         .with_context(|| format!("project '{}' has no managed deployment", project.id))?;
     verify_managed_target(&receipt)?;
     if receipt.active_index == 0 {
@@ -130,9 +142,10 @@ pub fn rollback(paths: &AppPaths, project: &Project) -> Result<ActionReport> {
     if !target.is_dir() {
         bail!("rollback target no longer exists: {}", target.display());
     }
-    atomic_link(&receipt.managed_target, &target)?;
+    verify_entry(&receipt.history[next_index])?;
+    let previous = fs::read_link(&receipt.managed_target).ok();
     receipt.active_index = next_index;
-    save_receipt(&receipt_path, &receipt)?;
+    publish(paths, &receipt_path, &receipt, previous)?;
     let warnings = rescan_warning();
     Ok(ActionReport {
         ok: true,
@@ -145,8 +158,7 @@ pub fn rollback(paths: &AppPaths, project: &Project) -> Result<ActionReport> {
 
 pub fn undeploy(paths: &AppPaths, project: &Project) -> Result<ActionReport> {
     let _lock = RegistryLock::acquire(paths)?;
-    let receipt_path = paths.receipt_path(&project.id);
-    let receipt = load_receipt(&receipt_path)?
+    let receipt = load_receipt_for(paths, &project.id)?
         .with_context(|| format!("project '{}' has no managed deployment", project.id))?;
     verify_managed_target(&receipt)?;
     fs::remove_file(&receipt.managed_target)
@@ -162,7 +174,17 @@ pub fn undeploy(paths: &AppPaths, project: &Project) -> Result<ActionReport> {
 }
 
 pub fn load_receipt_for(paths: &AppPaths, id: &str) -> Result<Option<DeploymentReceipt>> {
-    load_receipt(&paths.receipt_path(id))
+    crate::manifest::validate_id(id)?;
+    let receipt = load_receipt(&paths.receipt_path(id))?;
+    if let Some(receipt) = &receipt
+        && (receipt.plugin_id != id
+            || receipt.managed_target != paths.plugins_dir.join(id)
+            || receipt.schema_version != RECEIPT_SCHEMA
+            || receipt.history.get(receipt.active_index).is_none())
+    {
+        bail!("invalid deployment receipt ownership");
+    }
+    Ok(receipt)
 }
 
 fn switch_deployment(
@@ -173,7 +195,7 @@ fn switch_deployment(
 ) -> Result<ActionReport> {
     let target = paths.plugins_dir.join(&project.id);
     let receipt_path = paths.receipt_path(&project.id);
-    let existing_receipt = load_receipt(&receipt_path)?;
+    let existing_receipt = load_receipt_for(paths, &project.id)?;
     if target.exists() || target.is_symlink() {
         let receipt = existing_receipt.as_ref().with_context(|| {
             format!(
@@ -183,7 +205,7 @@ fn switch_deployment(
         })?;
         verify_managed_target(receipt)?;
     }
-    atomic_link(&target, &entry.target)?;
+    let previous = fs::read_link(&target).ok();
 
     let mut receipt = existing_receipt.unwrap_or(DeploymentReceipt {
         schema_version: RECEIPT_SCHEMA,
@@ -197,7 +219,7 @@ fn switch_deployment(
     }
     receipt.history.push(entry.clone());
     receipt.active_index = receipt.history.len() - 1;
-    save_receipt(&receipt_path, &receipt)?;
+    publish(paths, &receipt_path, &receipt, previous)?;
     let warnings = rescan_warning();
     Ok(ActionReport {
         ok: true,
@@ -210,6 +232,113 @@ fn switch_deployment(
         message: format!("{message}: {}", entry.target.display()),
         warnings,
     })
+}
+
+// A single journal is sufficient: all deployment mutations hold RegistryLock.
+#[derive(Serialize, Deserialize)]
+struct PendingDeployment {
+    receipt: DeploymentReceipt,
+    previous: Option<PathBuf>,
+}
+
+fn publish(
+    paths: &AppPaths,
+    receipt_path: &Path,
+    receipt: &DeploymentReceipt,
+    previous: Option<PathBuf>,
+) -> Result<()> {
+    let journal = paths.state_dir.join("deployment-pending.json");
+    if journal.exists() || journal.is_symlink() {
+        bail!("pending deployment must be recovered first");
+    }
+    let bytes = serde_json::to_vec(&PendingDeployment {
+        receipt: receipt.clone(),
+        previous,
+    })?;
+    if bytes.len() > 1024 * 1024 {
+        bail!("deployment history exceeds journal size limit");
+    }
+    write_atomic_private(&journal, &bytes)?;
+    let current = receipt
+        .history
+        .get(receipt.active_index)
+        .context("invalid deployment index")?;
+    atomic_link(&receipt.managed_target, &current.target)?;
+    fs::File::open(&paths.plugins_dir)?.sync_all()?;
+    save_receipt(receipt_path, receipt)?;
+    fs::remove_file(&journal)?;
+    fs::File::open(&paths.state_dir)?.sync_all()?;
+    Ok(())
+}
+
+pub fn recover_pending(paths: &AppPaths) -> Result<()> {
+    let _lock = RegistryLock::acquire(paths)?;
+    let journal = paths.state_dir.join("deployment-pending.json");
+    if !journal.exists() && !journal.is_symlink() {
+        return Ok(());
+    }
+    let metadata = fs::symlink_metadata(&journal)?;
+    if !metadata.is_file() || metadata.len() > 1024 * 1024 {
+        bail!("invalid deployment journal");
+    }
+    let pending: PendingDeployment = serde_json::from_slice(&fs::read(&journal)?)?;
+    let receipt = &pending.receipt;
+    crate::manifest::validate_id(&receipt.plugin_id)?;
+    if receipt.schema_version != RECEIPT_SCHEMA
+        || receipt.managed_target != paths.plugins_dir.join(&receipt.plugin_id)
+    {
+        bail!("invalid deployment journal ownership");
+    }
+    let entry = receipt
+        .history
+        .get(receipt.active_index)
+        .context("invalid journal index")?;
+    let actual = fs::read_link(&receipt.managed_target).ok();
+    if actual.as_ref() == Some(&entry.target) {
+        save_receipt(&paths.receipt_path(&receipt.plugin_id), receipt)?;
+    } else if actual != pending.previous || (actual.is_none() && receipt.managed_target.exists()) {
+        bail!("deployment changed outside Workbench; journal retained for recovery");
+    }
+    fs::remove_file(&journal)?;
+    fs::File::open(&paths.state_dir)?.sync_all()?;
+    Ok(())
+}
+
+pub fn verify_entry(entry: &DeploymentEntry) -> Result<()> {
+    if entry.mode == DeploymentMode::Snapshot {
+        let expected = entry
+            .content_digest
+            .as_deref()
+            .context("legacy snapshot is unverified; deploy a fresh snapshot")?;
+        if content_fingerprint(&entry.target)? != expected {
+            bail!("snapshot contents drifted from deployment receipt");
+        }
+    }
+    validate_plugin(&entry.target)?;
+    Ok(())
+}
+
+pub fn deployment_kind(paths: &AppPaths, id: &str) -> Result<Option<&'static str>> {
+    if id.starts_with("omarchy.") {
+        return Ok(None);
+    }
+    let Some(receipt) = load_receipt_for(paths, id)? else {
+        return Ok(None);
+    };
+    if verify_managed_target(&receipt).is_err() {
+        return Ok(Some("drifted"));
+    }
+    let entry = &receipt.history[receipt.active_index];
+    if entry.mode == DeploymentMode::Snapshot && entry.content_digest.is_none() {
+        return Ok(Some("unverified-snapshot"));
+    }
+    if verify_entry(entry).is_err() {
+        return Ok(Some("drifted"));
+    }
+    Ok(Some(match entry.mode {
+        DeploymentMode::Snapshot => "snapshot",
+        DeploymentMode::LiveLink => "live-link",
+    }))
 }
 
 fn verify_managed_target(receipt: &DeploymentReceipt) -> Result<()> {
@@ -261,7 +390,7 @@ fn atomic_link(target: &Path, source: &Path) -> Result<()> {
 }
 
 fn load_receipt(path: &Path) -> Result<Option<DeploymentReceipt>> {
-    if !path.exists() {
+    if !path.exists() && !path.is_symlink() {
         return Ok(None);
     }
     let meta = fs::symlink_metadata(path)?;
@@ -275,6 +404,9 @@ fn load_receipt(path: &Path) -> Result<Option<DeploymentReceipt>> {
 
 fn save_receipt(path: &Path, receipt: &DeploymentReceipt) -> Result<()> {
     let bytes = serde_json::to_vec_pretty(receipt)?;
+    if bytes.len() > 1024 * 1024 {
+        bail!("deployment receipt exceeds size limit");
+    }
     write_atomic_private(path, &bytes)
 }
 
@@ -290,6 +422,7 @@ fn write_atomic_private(path: &Path, bytes: &[u8]) -> Result<()> {
         file.write_all(b"\n")?;
         file.sync_all()?;
         fs::rename(&temporary, path)?;
+        fs::File::open(path.parent().context("missing parent")?)?.sync_all()?;
         Ok(())
     })();
     if result.is_err() {
@@ -323,19 +456,33 @@ fn content_fingerprint(root: &Path) -> Result<String> {
     let mut entries = WalkDir::new(root)
         .follow_links(false)
         .into_iter()
-        .filter_entry(should_descend)
         .collect::<std::result::Result<Vec<_>, _>>()?;
     entries.sort_by(|left, right| left.path().cmp(right.path()));
     let mut hash = Sha256::new();
     for entry in entries {
-        if !entry.file_type().is_file() {
-            continue;
-        }
         let relative = entry.path().strip_prefix(root)?;
-        hash.update(relative.as_os_str().as_encoded_bytes());
-        hash.update([0]);
-        hash.update(fs::read(entry.path())?);
-        hash.update([0]);
+        let name = relative.as_os_str().as_encoded_bytes();
+        hash.update((name.len() as u64).to_le_bytes());
+        hash.update(name);
+        let metadata = fs::symlink_metadata(entry.path())?;
+        hash.update((metadata.permissions().mode() & 0o777).to_le_bytes());
+        if metadata.is_dir() {
+            hash.update(b"directory");
+        } else if metadata.is_file() {
+            hash.update(b"file");
+            hash.update(metadata.len().to_le_bytes());
+            let mut file = fs::File::open(entry.path())?;
+            let mut buffer = [0_u8; 65536];
+            loop {
+                let n = file.read(&mut buffer)?;
+                if n == 0 {
+                    break;
+                }
+                hash.update(&buffer[..n]);
+            }
+        } else {
+            bail!("unsupported snapshot entry: {}", entry.path().display());
+        }
     }
     Ok(format!("{:x}", hash.finalize()))
 }
@@ -364,11 +511,18 @@ fn copy_tree(source: &Path, destination: &Path) -> Result<()> {
                 0o600
             };
             fs::set_permissions(&target, fs::Permissions::from_mode(mode))?;
+            fs::File::open(&target)?.sync_all()?;
         } else {
             bail!(
                 "snapshot contains unsupported file: {}",
                 entry.path().display()
             );
+        }
+    }
+    for entry in WalkDir::new(destination).contents_first(true) {
+        let entry = entry?;
+        if entry.file_type().is_dir() {
+            fs::File::open(entry.path())?.sync_all()?;
         }
     }
     Ok(())
@@ -386,6 +540,58 @@ fn unique_path(parent: &Path, base: &str) -> PathBuf {
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    #[test]
+    fn fingerprint_covers_modes_directories_and_previously_excluded_names() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("one");
+        fs::write(&path, "same bytes").unwrap();
+        let before = content_fingerprint(dir.path()).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
+        let executable = content_fingerprint(dir.path()).unwrap();
+        assert_ne!(before, executable);
+        fs::create_dir(dir.path().join("target")).unwrap();
+        assert_ne!(executable, content_fingerprint(dir.path()).unwrap());
+        symlink(&path, dir.path().join("alias")).unwrap();
+        assert!(content_fingerprint(dir.path()).is_err());
+    }
+
+    #[test]
+    fn failed_receipt_write_is_recoverable_after_link_publication() {
+        let dir = tempdir().unwrap();
+        let paths = AppPaths::from_bases(
+            dir.path().join("home"),
+            dir.path().join("config"),
+            dir.path().join("state"),
+        );
+        paths.ensure().unwrap();
+        secure_dir(&paths.plugins_dir).unwrap();
+        let source = dir.path().join("source");
+        fs::create_dir(&source).unwrap();
+        let receipt = DeploymentReceipt {
+            schema_version: RECEIPT_SCHEMA,
+            plugin_id: "io.test.demo".to_owned(),
+            managed_target: paths.plugins_dir.join("io.test.demo"),
+            active_index: 0,
+            history: vec![DeploymentEntry {
+                mode: DeploymentMode::LiveLink,
+                content_digest: None,
+                target: source.clone(),
+                revision: None,
+                dirty: false,
+                deployed_at_unix: 0,
+            }],
+        };
+        let receipt_path = paths.receipt_path("io.test.demo");
+        fs::create_dir(&receipt_path).unwrap();
+        assert!(publish(&paths, &receipt_path, &receipt, None).is_err());
+        assert_eq!(fs::read_link(&receipt.managed_target).unwrap(), source);
+        assert!(paths.state_dir.join("deployment-pending.json").is_file());
+        fs::remove_dir(&receipt_path).unwrap();
+        recover_pending(&paths).unwrap();
+        assert!(load_receipt(&receipt_path).unwrap().is_some());
+        assert!(!paths.state_dir.join("deployment-pending.json").exists());
+    }
 
     #[test]
     fn fingerprint_changes_with_content() {

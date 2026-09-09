@@ -476,6 +476,63 @@ fn git_stdout(paths: &AppPaths, directory: &Path, args: &[&str]) -> Result<Strin
     Ok(result.stdout.trim().to_owned())
 }
 
+// Validate a real checkout outside the shell's watched plugin tree. Unlike
+// git archive, checkout includes export-ignore files and preserves Git modes.
+pub(crate) fn validate_staged(
+    paths: &AppPaths,
+    directory: &Path,
+    revision: &str,
+    id: &str,
+) -> Result<()> {
+    let parent = paths.state_dir.join("update-staging");
+    crate::paths::secure_dir(&parent)?;
+    let stage = parent.join(format!(
+        "{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_nanos()
+    ));
+    let result = (|| -> Result<()> {
+        let clone = run_git(
+            paths,
+            &parent,
+            &[
+                "clone",
+                "--quiet",
+                "--no-hardlinks",
+                "--no-checkout",
+                "--",
+                &directory.to_string_lossy(),
+                &stage.to_string_lossy(),
+            ],
+        )?;
+        if !clone.ok {
+            bail!("could not stage update: {}", check_output(&clone));
+        }
+        let checkout = run_git(
+            paths,
+            &stage,
+            &["checkout", "--quiet", "--detach", revision],
+        )?;
+        if !checkout.ok {
+            bail!(
+                "could not stage reviewed revision: {}",
+                check_output(&checkout)
+            );
+        }
+        let manifest = crate::manifest::validate_plugin(&stage)?;
+        if manifest.id != id {
+            bail!("reviewed manifest id changed");
+        }
+        validate_updated_plugin(paths, &stage)
+    })();
+    let cleanup = std::fs::remove_dir_all(&stage);
+    result.context("staged validation failed; installed files unchanged")?;
+    cleanup.context("remove staged update")?;
+    Ok(())
+}
+
 fn apply_reviewed(paths: &AppPaths, plugin: &PluginUpdate, rescan: bool) -> Result<()> {
     let directory = paths.plugins_dir.join(&plugin.id);
     let expected_current = plugin
@@ -498,6 +555,17 @@ fn apply_reviewed(paths: &AppPaths, plugin: &PluginUpdate, rescan: bool) -> Resu
     {
         bail!("working tree changed since review");
     }
+    validate_staged(paths, &directory, expected_remote, &plugin.id)?;
+    if git_stdout(paths, &directory, &["rev-parse", "HEAD"])? != expected_current
+        || !git_stdout(
+            paths,
+            &directory,
+            &["status", "--porcelain", "--untracked-files=normal"],
+        )?
+        .is_empty()
+    {
+        bail!("checkout changed during staged validation");
+    }
     let merge = run_git(paths, &directory, &["merge", "--ff-only", expected_remote])?;
     if !merge.ok {
         bail!(
@@ -506,7 +574,13 @@ fn apply_reviewed(paths: &AppPaths, plugin: &PluginUpdate, rescan: bool) -> Resu
         );
     }
     if git_stdout(paths, &directory, &["rev-parse", "HEAD"])? != expected_remote {
-        let _ = run_git(paths, &directory, &["reset", "--hard", expected_current]);
+        let rollback = run_git(paths, &directory, &["reset", "--hard", expected_current])?;
+        if !rollback.ok {
+            bail!(
+                "unexpected Git revision and rollback failed: {}",
+                check_output(&rollback)
+            );
+        }
         bail!("Git did not land on the reviewed revision; the update was rolled back");
     }
     if let Err(error) = validate_updated_plugin(paths, &directory) {

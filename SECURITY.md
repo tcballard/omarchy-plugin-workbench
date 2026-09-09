@@ -36,8 +36,8 @@ Plugin Workbench treats plugin source, project configuration, shell logs, and in
 - Review history and detail reads remain bounded and expose previous records as stale rather than carrying their result onto new source. Concurrent imports are serialized and receive strictly increasing local timestamps.
 - Security remediation requires a clean checkout at the latest reviewed commit, copies only selected validated findings into owner-only state, and creates a separate Git worktree without editing or publishing the source checkout.
 - Security dossiers require a current exact-commit `Ready` review. They bind the review record by SHA-256 and collect only bounded same-revision Workbench evidence; generation never uploads or submits the dossier.
-- The bundled x86-64 helper is an intentional reviewed binary. Its Rust toolchain and container environment are pinned, Cargo input is frozen, and CI requires two clean builds plus the committed executable to be byte-identical before verifying its recorded SHA-256 and version.
-- Trusted `main` and version-tag workflows publish GitHub build-provenance attestations binding the bundled executable digest to the repository, workflow, and exact commit. See `docs/reproducible-build.md`.
+- The Rust toolchain and reproduction container are pinned. CI compares two clean release candidate builds; main does not contain a bundled executable.
+- Version-tag workflows publish build-provenance attestations for release candidates. A source checkout needs a local build or a compatible packaged helper. See `docs/reproducible-build.md`.
 - The 0.2.0 command, workflow, worktree, nested-session, update, marketplace, and binary boundaries are recorded in `docs/security-audit-0.2.0.md`.
 
 ## Important limitation

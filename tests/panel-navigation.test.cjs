@@ -7,7 +7,7 @@ const source = fs.readFileSync(`${__dirname}/../Panel.qml`, 'utf8');
 function panel() {
   const calls = [];
   const root = {
-    opened: true, busy: false, pendingAction: '', helperPath: '/helper',
+    opened: true, busy: false, pendingAction: '', helperPath: '/helper', helperCompatible: true,
     viewMode: 'discover', controller: { show() { calls.push('show'); } },
     marketplaceAttempted: false, portfolioAttempted: false, projectsAttempted: false,
   };
@@ -137,4 +137,15 @@ test('offscreen row layout completes before keyboard focus moves', () => {
   root.moveContent(0, 1);
   assert.equal(feed.currentIndex, 6);
   assert.deepEqual(order, [['scroll', 6], ['layout'], ['lookup', 6], ['focus']]);
+});
+
+test('an incompatible helper cannot start portfolio or project requests', () => {
+  const {root, calls} = panel();
+  root.helperCompatible = false;
+  root.ensureViewLoaded();
+  root.setViewMode('build');
+  assert.deepEqual(calls, []);
+  root.helperCompatible = true;
+  root.ensureViewLoaded();
+  assert.deepEqual(calls, ['refresh']);
 });
