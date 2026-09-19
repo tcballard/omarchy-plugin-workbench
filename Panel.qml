@@ -1565,7 +1565,7 @@ Panel {
     readonly property var update: row.update
     readonly property bool marketplaceManaged: plugin.management === "marketplace"
     readonly property bool updateReady: marketplaceManaged
-      ? Boolean(plugin.updateAvailable) : Boolean(update && update.updateable)
+      ? Boolean(plugin.updateAvailable) : plugin.management === "git" && Boolean(update && update.updateable)
     readonly property string state: marketplaceManaged
       ? String(plugin.managedState || "current")
       : update ? String(update.state || "unknown")
@@ -1574,6 +1574,8 @@ Panel {
       || state === "enabled" || state === "disabled"
     readonly property string sourceLabel: plugin.management === "first-party" ? "OMARCHY"
       : plugin.management === "marketplace" ? "MARKETPLACE MANAGED"
+      : plugin.management === "package-owned" ? "PACKAGE OWNED · " + String(plugin.packageName || "")
+      : plugin.management === "ownership-unknown" ? "LINK OWNERSHIP UNKNOWN"
       : plugin.management === "live-link" ? "LIVE DEVELOPMENT LINK"
       : plugin.management === "git" ? "DIRECT GIT CHECKOUT"
       : "LOCAL PLUGIN"
@@ -1687,6 +1689,16 @@ Panel {
         font.family: root.bar ? root.bar.fontFamily : Style.font.family
         font.pixelSize: Style.font.caption
         elide: Text.ElideRight
+      }
+
+      Text {
+        visible: installedCard.plugin.management === "package-owned"
+        width: parent.width
+        text: "Update or uninstall through package management. Disabling keeps the package installed."
+        textFormat: Text.PlainText
+        color: root.textMuted
+        font.pixelSize: Style.font.caption
+        wrapMode: Text.Wrap
       }
 
       Text {

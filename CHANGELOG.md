@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Recognise package-owned plugin symlinks using the resolved manifest's pacman owner; show package ownership and distinguish shell disabling from package uninstall. Report failed ownership checks explicitly instead of labelling those links as development installations.
+
 - Focus Plugin Workbench exclusively on discovering, installing, maintaining, updating, and building Omarchy plugins.
 - Reorganise the native panel around Discover, Installed, Updates, and Build lifecycle modes with Ctrl+1/2/3/4 switching and a shared keyboard-scroll model.
 - Inventory every plugin Omarchy discovers and classify first-party, marketplace-managed, direct Git, live-link, and local installations.
