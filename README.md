@@ -395,6 +395,16 @@ Config, state, receipts, and captured check output use owner-only permissions. S
 
 Workbench refuses to replace a normal directory, a Git checkout installed by Omarchy, or an unrecognised symlink. `undeploy` removes only the managed symlink and retains snapshot history. It never deletes the source checkout.
 
+Installed inventory checks symlink targets with `pacman -Qqo` against the resolved
+`manifest.json`. Package-owned links (including Core's Elsewhen link into
+`/usr/share/omarchy/plugins`) show their owning package rather than appearing as
+live development links. Updates and package uninstall belong to package management;
+Workbench's enable/disable controls only change shell activation. Disabling or
+unlinking a user entry does not uninstall its package. Workbench does not offer
+unlink/removal for these unmanaged links. If ownership cannot be established
+(including unavailable pacman or a broken link), inventory reports ownership unknown.
+This detection does not require proposed Core `system` metadata.
+
 ## Build Omarchy Plugins companion
 
 [Build Omarchy Plugins](https://github.com/tcballard/build-omarchy-plugins) is the
