@@ -5,6 +5,7 @@ use anyhow::{Context, Result, bail};
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::path::Path;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -60,8 +61,17 @@ pub fn inspect(paths: &AppPaths) -> Result<InstalledReport> {
             .unwrap_or(false);
         let managed_plugin = managed_by_id.get(id.as_str()).copied();
         let target = paths.plugins_dir.join(&id);
+        let ownership = if !first_party && target.is_symlink() {
+            package_owner(&target)
+        } else {
+            Ok(None)
+        };
         let management = if first_party {
             "first-party"
+        } else if matches!(ownership, Ok(Some(_))) {
+            "package-owned"
+        } else if ownership.is_err() {
+            "ownership-unknown"
         } else if managed_plugin.is_some() {
             "marketplace"
         } else if target.is_symlink() {
@@ -75,7 +85,19 @@ pub fn inspect(paths: &AppPaths) -> Result<InstalledReport> {
             "management".to_owned(),
             Value::String(management.to_owned()),
         );
-        if let Some(managed_plugin) = managed_plugin {
+        match ownership {
+            Ok(Some(package)) => {
+                object.insert("packageName".to_owned(), Value::String(package));
+            }
+            Err(error) => {
+                object.insert(
+                    "managementError".to_owned(),
+                    Value::String(format!("{error:#}")),
+                );
+            }
+            Ok(None) => {}
+        }
+        if let Some(managed_plugin) = managed_plugin.filter(|_| management == "marketplace") {
             object.insert(
                 "managedState".to_owned(),
                 Value::String(managed_plugin.state.clone()),
@@ -120,6 +142,38 @@ pub fn inspect(paths: &AppPaths) -> Result<InstalledReport> {
         count: plugins.len(),
         plugins,
     })
+}
+
+// Query the resolved manifest, not the user-owned link or a shared directory.
+// This also works with today's Core inventory, which has no system metadata.
+fn package_owner(target: &Path) -> Result<Option<String>> {
+    let manifest = target
+        .join("manifest.json")
+        .canonicalize()
+        .context("cannot resolve plugin manifest for package ownership")?;
+    let manifest = manifest
+        .to_str()
+        .context("plugin manifest path is not UTF-8")?;
+    let result = capture_tool("pacman", &["-Qqo", "--", manifest], None);
+    if !result.available {
+        bail!("pacman is unavailable; plugin link ownership is unknown");
+    }
+    if result.ok {
+        let package = result.output.trim();
+        if package.is_empty() || package.split_whitespace().count() != 1 {
+            bail!("pacman returned ambiguous plugin ownership");
+        }
+        return Ok(Some(package.to_owned()));
+    }
+    if result.exit_code == Some(1)
+        && result.output.trim() == format!("error: No package owns {manifest}")
+    {
+        return Ok(None);
+    }
+    bail!(
+        "could not determine plugin package ownership: {}",
+        result.output.trim()
+    )
 }
 
 pub fn set_enabled(paths: &AppPaths, id: &str, enabled: bool) -> Result<EnabledReport> {
