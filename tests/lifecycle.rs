@@ -5,6 +5,73 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use tempfile::TempDir;
 
+#[test]
+fn package_owned_links_are_classified_without_becoming_mutable_installations() {
+    let harness = Harness::new();
+    let target = harness.installed_target();
+    fs::create_dir_all(target.parent().unwrap()).unwrap();
+    symlink(&harness.project, &target).unwrap();
+    let (tools, log) = fake_omarchy_tools(&harness, true);
+    fs::write(
+        tools.join("omarchy"),
+        "#!/bin/sh\nprintf '%s\\n' '[{\"id\":\"io.test.workbench-demo\",\"firstParty\":false}]'\n",
+    )
+    .unwrap();
+    let pacman = tools.join("pacman");
+    let manifest = harness
+        .project
+        .join("manifest.json")
+        .canonicalize()
+        .unwrap();
+    fs::write(&pacman, format!("#!/bin/sh\n[ \"$1\" = -Qqo ] && [ \"$2\" = -- ] && [ \"$3\" = '{}' ] || exit 2\nprintf 'elsewhen\\n'\n", manifest.display())).unwrap();
+    fs::set_permissions(&pacman, fs::Permissions::from_mode(0o755)).unwrap();
+    let inspect = || {
+        let output = harness.run_with_tools(&["installed", "--json"], &tools, &log);
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        serde_json::from_slice::<Value>(&output.stdout).unwrap()
+    };
+    let report = inspect();
+    assert_eq!(report["plugins"][0]["management"], "package-owned");
+    assert_eq!(report["plugins"][0]["packageName"], "elsewhen");
+    let update = harness.run(&["updates", "io.test.workbench-demo", "--json"]);
+    assert!(!update.status.success());
+    assert!(String::from_utf8_lossy(&update.stdout).contains("not a Git-managed installation"));
+    assert!(
+        !harness
+            .run(&[
+                "marketplace-uninstall",
+                "io.test.workbench-demo",
+                "--yes",
+                "--json"
+            ])
+            .status
+            .success()
+    );
+    assert!(target.is_symlink());
+    assert!(manifest.is_file());
+
+    fs::write(
+        &pacman,
+        "#!/bin/sh\nprintf 'error: No package owns %s\\n' \"$3\" >&2\nexit 1\n",
+    )
+    .unwrap();
+    assert_eq!(inspect()["plugins"][0]["management"], "live-link");
+    fs::write(
+        &pacman,
+        "#!/bin/sh\necho 'error: could not open database' >&2\nexit 1\n",
+    )
+    .unwrap();
+    assert_eq!(inspect()["plugins"][0]["management"], "ownership-unknown");
+    fs::write(&pacman, "#!/bin/sh\nprintf 'one\\ntwo\\n'\n").unwrap();
+    assert_eq!(inspect()["plugins"][0]["management"], "ownership-unknown");
+    fs::remove_file(&manifest).unwrap();
+    assert_eq!(inspect()["plugins"][0]["management"], "ownership-unknown");
+}
+
 struct Harness {
     root: TempDir,
     home: PathBuf,
