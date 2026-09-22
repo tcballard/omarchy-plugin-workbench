@@ -8,11 +8,11 @@ use crate::process::{capture_tool, command_exists};
 use crate::registry::{RegistryLock, now_unix};
 use anyhow::{Context, Result, bail};
 use sha2::{Digest, Sha256};
-use std::fs::{self, OpenOptions};
+use std::fs::{self, File};
 use std::ffi::CString;
-use std::io::Write;
-use std::os::fd::AsRawFd;
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt, symlink};
+use std::io::{Read, Write};
+use std::os::fd::{AsRawFd, FromRawFd};
+use std::os::unix::fs::{PermissionsExt, symlink};
 use std::path::{Path, PathBuf};
 use walkdir::{DirEntry, WalkDir};
 
@@ -289,14 +289,23 @@ fn atomic_link(target: &Path, source: &Path) -> Result<()> {
 }
 
 fn load_receipt(path: &Path) -> Result<Option<DeploymentReceipt>> {
-    if !path.exists() {
-        return Ok(None);
+    let parent = open_directory(path.parent().context("receipt has no parent")?, false)?;
+    let name = CString::new(path.file_name().context("receipt has no name")?.as_encoded_bytes())?;
+    let raw = unsafe { libc::openat(parent.as_raw_fd(), name.as_ptr(), libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_CLOEXEC) };
+    if raw < 0 {
+        let error = std::io::Error::last_os_error();
+        if error.kind() == std::io::ErrorKind::NotFound { return Ok(None); }
+        return Err(error).context("open deployment receipt");
     }
-    let meta = fs::symlink_metadata(path)?;
-    if meta.file_type().is_symlink() || !meta.is_file() || meta.len() > 1024 * 1024 {
+    let mut file = unsafe { File::from_raw_fd(raw) };
+    let meta = file.metadata()?;
+    if !meta.is_file() || meta.len() > 1024 * 1024 {
         bail!("invalid deployment receipt: {}", path.display());
     }
-    let receipt = serde_json::from_slice(&fs::read(path)?)
+    let mut bytes = Vec::new();
+    file.take(1024 * 1024 + 1).read_to_end(&mut bytes)?;
+    if bytes.len() > 1024 * 1024 { bail!("deployment receipt exceeds size limit"); }
+    let receipt = serde_json::from_slice(&bytes)
         .with_context(|| format!("parse deployment receipt {}", path.display()))?;
     Ok(Some(receipt))
 }
@@ -307,21 +316,26 @@ fn save_receipt(path: &Path, receipt: &DeploymentReceipt) -> Result<()> {
 }
 
 fn write_atomic_private(path: &Path, bytes: &[u8]) -> Result<()> {
-    let temporary = path.with_extension(format!("tmp.{}", std::process::id()));
-    let mut file = OpenOptions::new()
-        .create_new(true)
-        .write(true)
-        .mode(0o600)
-        .open(&temporary)?;
+    let parent = open_directory(path.parent().context("receipt has no parent")?, false)?;
+    let name = CString::new(path.file_name().context("receipt has no name")?.as_encoded_bytes())?;
+    let temporary = CString::new(format!("{}.tmp.{}", name.to_string_lossy(), std::process::id()))?;
+    let raw = unsafe { libc::openat(parent.as_raw_fd(), temporary.as_ptr(), libc::O_CREAT | libc::O_EXCL | libc::O_WRONLY | libc::O_NOFOLLOW | libc::O_CLOEXEC, 0o600) };
+    if raw < 0 { return Err(std::io::Error::last_os_error()).context("create private receipt stage"); }
+    let mut file = unsafe { File::from_raw_fd(raw) };
     let result = (|| -> Result<()> {
         file.write_all(bytes)?;
         file.write_all(b"\n")?;
         file.sync_all()?;
-        fs::rename(&temporary, path)?;
+        if unsafe { libc::renameat(parent.as_raw_fd(), temporary.as_ptr(), parent.as_raw_fd(), name.as_ptr()) } != 0 {
+            return Err(std::io::Error::last_os_error()).context("publish deployment receipt");
+        }
+        if unsafe { libc::fsync(parent.as_raw_fd()) } != 0 {
+            return Err(std::io::Error::last_os_error()).context("sync deployment receipts directory");
+        }
         Ok(())
     })();
     if result.is_err() {
-        let _ = fs::remove_file(&temporary);
+        unsafe { libc::unlinkat(parent.as_raw_fd(), temporary.as_ptr(), 0) };
     }
     result
 }
@@ -457,7 +471,7 @@ mod tests {
             history: vec![old_entry],
         };
         save_receipt(&receipt_path, &receipt).unwrap();
-        fs::create_dir(receipt_path.with_extension(format!("tmp.{}", std::process::id()))).unwrap();
+        fs::create_dir(receipt_path.with_file_name(format!("io.test.plugin.json.tmp.{}", std::process::id()))).unwrap();
         let project = Project {
             id: "io.test.plugin".to_owned(),
             name: "Test".to_owned(),
