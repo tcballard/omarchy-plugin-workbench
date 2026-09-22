@@ -597,8 +597,16 @@ fn content_fingerprint(root: &Path) -> Result<String> {
 
 fn copy_tree(source: &Path, destination: &Path) -> Result<()> {
     let source_fd = open_directory(source, false)?;
-    let destination_parent = open_directory(destination.parent().context("snapshot has no parent")?, false)?;
-    let name = CString::new(destination.file_name().context("snapshot has no name")?.as_encoded_bytes())?;
+    let destination_parent = open_directory(
+        destination.parent().context("snapshot has no parent")?,
+        false,
+    )?;
+    let name = CString::new(
+        destination
+            .file_name()
+            .context("snapshot has no name")?
+            .as_encoded_bytes(),
+    )?;
     if unsafe { libc::mkdirat(destination_parent.as_raw_fd(), name.as_ptr(), 0o700) } != 0 {
         return Err(std::io::Error::last_os_error()).context("create snapshot stage");
     }
@@ -607,8 +615,16 @@ fn copy_tree(source: &Path, destination: &Path) -> Result<()> {
 }
 
 fn open_child_directory(parent: i32, name: &CString) -> Result<OwnedFd> {
-    let raw = unsafe { libc::openat(parent, name.as_ptr(), libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC) };
-    if raw < 0 { return Err(std::io::Error::last_os_error()).context("open snapshot child directory"); }
+    let raw = unsafe {
+        libc::openat(
+            parent,
+            name.as_ptr(),
+            libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+        )
+    };
+    if raw < 0 {
+        return Err(std::io::Error::last_os_error()).context("open snapshot child directory");
+    }
     Ok(unsafe { OwnedFd::from_raw_fd(raw) })
 }
 
@@ -617,12 +633,23 @@ fn copy_directory(source: &OwnedFd, destination: &OwnedFd) -> Result<()> {
         let entry = entry?;
         let name_os = entry.file_name();
         let name = CString::new(name_os.as_encoded_bytes())?;
-        let raw = unsafe { libc::openat(source.as_raw_fd(), name.as_ptr(), libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK) };
-        if raw < 0 { return Err(std::io::Error::last_os_error()).context("open snapshot source without following links"); }
+        let raw = unsafe {
+            libc::openat(
+                source.as_raw_fd(),
+                name.as_ptr(),
+                libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK,
+            )
+        };
+        if raw < 0 {
+            return Err(std::io::Error::last_os_error())
+                .context("open snapshot source without following links");
+        }
         let mut input = unsafe { File::from_raw_fd(raw) };
         let metadata = input.metadata()?;
         if metadata.is_dir() {
-            if name_os == ".git" || name_os == "target" { continue; }
+            if name_os == ".git" || name_os == "target" {
+                continue;
+            }
             if unsafe { libc::mkdirat(destination.as_raw_fd(), name.as_ptr(), 0o700) } != 0 {
                 return Err(std::io::Error::last_os_error()).context("create snapshot directory");
             }
@@ -630,14 +657,34 @@ fn copy_directory(source: &OwnedFd, destination: &OwnedFd) -> Result<()> {
             let destination_child = open_child_directory(destination.as_raw_fd(), &name)?;
             copy_directory(&source_child, &destination_child)?;
         } else if metadata.is_file() {
-            let mode = if metadata.permissions().mode() & 0o111 != 0 { 0o700 } else { 0o600 };
-            let output = unsafe { libc::openat(destination.as_raw_fd(), name.as_ptr(), libc::O_CREAT | libc::O_EXCL | libc::O_WRONLY | libc::O_NOFOLLOW | libc::O_CLOEXEC, mode) };
-            if output < 0 { return Err(std::io::Error::last_os_error()).context("create snapshot file"); }
+            let mode = if metadata.permissions().mode() & 0o111 != 0 {
+                0o700
+            } else {
+                0o600
+            };
+            let output = unsafe {
+                libc::openat(
+                    destination.as_raw_fd(),
+                    name.as_ptr(),
+                    libc::O_CREAT
+                        | libc::O_EXCL
+                        | libc::O_WRONLY
+                        | libc::O_NOFOLLOW
+                        | libc::O_CLOEXEC,
+                    mode,
+                )
+            };
+            if output < 0 {
+                return Err(std::io::Error::last_os_error()).context("create snapshot file");
+            }
             let mut output = unsafe { File::from_raw_fd(output) };
             std::io::copy(&mut input, &mut output)?;
             output.sync_all()?;
         } else {
-            bail!("snapshot contains unsupported file: {}", entry.path().display());
+            bail!(
+                "snapshot contains unsupported file: {}",
+                entry.path().display()
+            );
         }
     }
     if unsafe { libc::fsync(destination.as_raw_fd()) } != 0 {
