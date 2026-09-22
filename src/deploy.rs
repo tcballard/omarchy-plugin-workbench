@@ -102,7 +102,9 @@ pub fn deploy_snapshot(paths: &AppPaths, project: &Project) -> Result<ActionRepo
         let _ = fs::remove_dir_all(&temporary);
         return Err(error);
     }
-    if content_fingerprint(&temporary)? != fingerprint || content_fingerprint(&project.plugin_root)? != fingerprint {
+    if content_fingerprint(&temporary)? != fingerprint
+        || content_fingerprint(&project.plugin_root)? != fingerprint
+    {
         fs::remove_dir_all(&temporary)?;
         bail!("plugin source changed during snapshot copy");
     }
@@ -192,7 +194,9 @@ fn switch_deployment(
         })?;
         verify_managed_target(receipt)?;
     }
-    let previous = existing_receipt.as_ref().map(|receipt| receipt.history[receipt.active_index].target.clone());
+    let previous = existing_receipt
+        .as_ref()
+        .map(|receipt| receipt.history[receipt.active_index].target.clone());
     atomic_link(&target, &entry.target)?;
 
     let mut receipt = existing_receipt.unwrap_or(DeploymentReceipt {
@@ -419,7 +423,11 @@ mod tests {
     #[test]
     fn receipt_failure_restores_the_preceding_link() {
         let root = tempdir().unwrap();
-        let paths = AppPaths::from_bases(root.path().join("home"), root.path().join("config"), root.path().join("state"));
+        let paths = AppPaths::from_bases(
+            root.path().join("home"),
+            root.path().join("config"),
+            root.path().join("state"),
+        );
         paths.ensure().unwrap();
         secure_dir(&paths.plugins_dir).unwrap();
         let old = root.path().join("old");
@@ -429,17 +437,43 @@ mod tests {
         let target = paths.plugins_dir.join("io.test.plugin");
         symlink(&old, &target).unwrap();
         let receipt_path = paths.receipt_path("io.test.plugin");
-        let old_entry = DeploymentEntry { mode: DeploymentMode::Snapshot, target: old.clone(), revision: None, dirty: false, deployed_at_unix: 0 };
-        let receipt = DeploymentReceipt { schema_version: RECEIPT_SCHEMA, plugin_id: "io.test.plugin".to_owned(), managed_target: target.clone(), active_index: 0, history: vec![old_entry] };
+        let old_entry = DeploymentEntry {
+            mode: DeploymentMode::Snapshot,
+            target: old.clone(),
+            revision: None,
+            dirty: false,
+            deployed_at_unix: 0,
+        };
+        let receipt = DeploymentReceipt {
+            schema_version: RECEIPT_SCHEMA,
+            plugin_id: "io.test.plugin".to_owned(),
+            managed_target: target.clone(),
+            active_index: 0,
+            history: vec![old_entry],
+        };
         save_receipt(&receipt_path, &receipt).unwrap();
         fs::create_dir(receipt_path.with_extension(format!("tmp.{}", std::process::id()))).unwrap();
         let project = Project {
             id: "io.test.plugin".to_owned(),
-            name: "Test".to_owned(), project_root: root.path().to_path_buf(), plugin_root: root.path().to_path_buf(),
-            checks: vec![], workflows: vec![], environment: vec![], project_checks_trusted: false,
-            trusted_definition_digest: None, definition_digest: None, approved_capabilities: vec![], added_at_unix: 0,
+            name: "Test".to_owned(),
+            project_root: root.path().to_path_buf(),
+            plugin_root: root.path().to_path_buf(),
+            checks: vec![],
+            workflows: vec![],
+            environment: vec![],
+            project_checks_trusted: false,
+            trusted_definition_digest: None,
+            definition_digest: None,
+            approved_capabilities: vec![],
+            added_at_unix: 0,
         };
-        let entry = DeploymentEntry { mode: DeploymentMode::Snapshot, target: new, revision: None, dirty: false, deployed_at_unix: 0 };
+        let entry = DeploymentEntry {
+            mode: DeploymentMode::Snapshot,
+            target: new,
+            revision: None,
+            dirty: false,
+            deployed_at_unix: 0,
+        };
         assert!(switch_deployment(&paths, &project, entry, "test").is_err());
         assert_eq!(fs::read_link(target).unwrap(), old);
     }
