@@ -112,29 +112,48 @@ pub fn open_directory(path: &Path, create: bool) -> Result<OwnedFd> {
     let mut fd = open_at(libc::AT_FDCWD, &root)?;
     for component in path.components() {
         let Component::Normal(part) = component else {
-            if matches!(component, Component::RootDir) { continue; }
+            if matches!(component, Component::RootDir) {
+                continue;
+            }
             bail!("unsafe path component in {}", path.display());
         };
         let name = CString::new(part.as_encoded_bytes())?;
         let next = open_at(fd.as_raw_fd(), &name);
         fd = match next {
             Ok(next) => next,
-            Err(error) if create && error.downcast_ref::<std::io::Error>().is_some_and(|e| e.kind() == std::io::ErrorKind::NotFound) => {
+            Err(error)
+                if create
+                    && error
+                        .downcast_ref::<std::io::Error>()
+                        .is_some_and(|e| e.kind() == std::io::ErrorKind::NotFound) =>
+            {
                 if unsafe { libc::mkdirat(fd.as_raw_fd(), name.as_ptr(), 0o700) } != 0 {
                     let error = std::io::Error::last_os_error();
-                    if error.kind() != std::io::ErrorKind::AlreadyExists { return Err(error.into()); }
+                    if error.kind() != std::io::ErrorKind::AlreadyExists {
+                        return Err(error.into());
+                    }
                 }
                 open_at(fd.as_raw_fd(), &name)?
             }
-            Err(error) => return Err(error).with_context(|| format!("unsafe directory {}", path.display())),
+            Err(error) => {
+                return Err(error).with_context(|| format!("unsafe directory {}", path.display()));
+            }
         };
     }
     Ok(fd)
 }
 
 fn open_at(parent: i32, name: &CString) -> Result<OwnedFd> {
-    let raw = unsafe { libc::openat(parent, name.as_ptr(), libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC) };
-    if raw < 0 { return Err(std::io::Error::last_os_error().into()); }
+    let raw = unsafe {
+        libc::openat(
+            parent,
+            name.as_ptr(),
+            libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+        )
+    };
+    if raw < 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
     Ok(unsafe { OwnedFd::from_raw_fd(raw) })
 }
 
