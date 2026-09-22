@@ -1,8 +1,8 @@
 use anyhow::{Context, Result, bail};
 use std::env;
-use std::fs;
-use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
+use std::ffi::CString;
+use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+use std::path::{Component, Path, PathBuf};
 
 #[derive(Debug, Clone)]
 pub struct AppPaths {
@@ -96,19 +96,60 @@ impl AppPaths {
 }
 
 pub fn secure_dir(path: &Path) -> Result<()> {
-    if path.exists() {
-        let meta = fs::symlink_metadata(path)
-            .with_context(|| format!("inspect directory {}", path.display()))?;
-        if meta.file_type().is_symlink() {
-            bail!("security boundary is a symlink: {}", path.display());
-        }
-        if !meta.is_dir() {
-            bail!("expected a directory: {}", path.display());
-        }
-    } else {
-        fs::create_dir_all(path).with_context(|| format!("create {}", path.display()))?;
+    let directory = open_directory(path, true)?;
+    // chmod the opened inode, not a path that could have changed after inspection.
+    if unsafe { libc::fchmod(directory.as_raw_fd(), 0o700) } != 0 {
+        return Err(std::io::Error::last_os_error()).context("protect private directory");
     }
-    fs::set_permissions(path, fs::Permissions::from_mode(0o700))
-        .with_context(|| format!("set private permissions on {}", path.display()))?;
     Ok(())
+}
+
+pub fn open_directory(path: &Path, create: bool) -> Result<OwnedFd> {
+    if !path.is_absolute() {
+        bail!("security boundary must be absolute: {}", path.display());
+    }
+    let root = CString::new("/")?;
+    let mut fd = open_at(libc::AT_FDCWD, &root)?;
+    for component in path.components() {
+        let Component::Normal(part) = component else {
+            if matches!(component, Component::RootDir) { continue; }
+            bail!("unsafe path component in {}", path.display());
+        };
+        let name = CString::new(part.as_encoded_bytes())?;
+        let next = open_at(fd.as_raw_fd(), &name);
+        fd = match next {
+            Ok(next) => next,
+            Err(error) if create && error.downcast_ref::<std::io::Error>().is_some_and(|e| e.kind() == std::io::ErrorKind::NotFound) => {
+                if unsafe { libc::mkdirat(fd.as_raw_fd(), name.as_ptr(), 0o700) } != 0 {
+                    let error = std::io::Error::last_os_error();
+                    if error.kind() != std::io::ErrorKind::AlreadyExists { return Err(error.into()); }
+                }
+                open_at(fd.as_raw_fd(), &name)?
+            }
+            Err(error) => return Err(error).with_context(|| format!("unsafe directory {}", path.display())),
+        };
+    }
+    Ok(fd)
+}
+
+fn open_at(parent: i32, name: &CString) -> Result<OwnedFd> {
+    let raw = unsafe { libc::openat(parent, name.as_ptr(), libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC) };
+    if raw < 0 { return Err(std::io::Error::last_os_error().into()); }
+    Ok(unsafe { OwnedFd::from_raw_fd(raw) })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::symlink;
+
+    #[test]
+    fn rejects_linked_ancestor_without_touching_destination() {
+        let root = tempfile::tempdir().unwrap();
+        let outside = root.path().join("outside");
+        std::fs::create_dir(&outside).unwrap();
+        symlink(&outside, root.path().join("redirect")).unwrap();
+        assert!(secure_dir(&root.path().join("redirect/private")).is_err());
+        assert!(!outside.join("private").exists());
+    }
 }
