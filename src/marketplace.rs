@@ -16,7 +16,9 @@ const CATALOG_URL: &str = "https://plugins.omarchy.org/catalog.json";
 // The public catalogue can be browsed, but has no independently verifiable
 // signature or digest. Never use its repository/revision fields to deploy code.
 fn require_verified_install_authority() -> Result<()> {
-    bail!("Workbench installs and updates are paused: the network catalogue has no independently verified identity. Use the installed Omarchy marketplace")
+    bail!(
+        "Workbench installs and updates are paused: the network catalogue has no independently verified identity. Use the installed Omarchy marketplace"
+    )
 }
 const CATALOG_SCHEMA: u32 = 2;
 const MAX_CATALOG_BYTES: u64 = 8 * 1024 * 1024;
