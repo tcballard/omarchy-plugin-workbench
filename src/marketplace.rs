@@ -11,7 +11,13 @@ use std::io::Write;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
-const CATALOG_URL: &str = "https://omarchyplugins.com/catalog.json";
+const CATALOG_URL: &str = "https://plugins.omarchy.org/catalog.json";
+
+// The public catalogue can be browsed, but has no independently verifiable
+// signature or digest. Never use its repository/revision fields to deploy code.
+fn require_verified_install_authority() -> Result<()> {
+    bail!("Workbench installs and updates are paused: the network catalogue has no independently verified identity. Use the installed Omarchy marketplace")
+}
 const CATALOG_SCHEMA: u32 = 2;
 const MAX_CATALOG_BYTES: u64 = 8 * 1024 * 1024;
 const MAX_CATALOG_PLUGINS: usize = 5_000;
@@ -222,10 +228,7 @@ pub fn refresh(paths: &AppPaths) -> Result<RefreshReport> {
                 "--fail".to_owned(),
                 "--silent".to_owned(),
                 "--show-error".to_owned(),
-                "--location".to_owned(),
                 "--proto".to_owned(),
-                "=https".to_owned(),
-                "--proto-redir".to_owned(),
                 "=https".to_owned(),
                 "--connect-timeout".to_owned(),
                 "10".to_owned(),
@@ -331,6 +334,7 @@ pub fn install(
     enable: bool,
     confirmed: bool,
 ) -> Result<InstallReport> {
+    require_verified_install_authority()?;
     if !confirmed {
         bail!("refusing to install without explicit confirmation; pass --yes after review");
     }
@@ -520,6 +524,7 @@ pub fn update_managed(
     reviewed_revision: &str,
     confirmed: bool,
 ) -> Result<LifecycleReport> {
+    require_verified_install_authority()?;
     require_lifecycle_confirmation(confirmed, "update")?;
     validate_plugin_id(id)?;
     validate_revision(reviewed_revision)?;
@@ -621,6 +626,7 @@ pub fn update_managed(
 }
 
 pub fn repair(paths: &AppPaths, id: &str, confirmed: bool) -> Result<LifecycleReport> {
+    require_verified_install_authority()?;
     require_lifecycle_confirmation(confirmed, "repair")?;
     validate_plugin_id(id)?;
     for command in ["git", "omarchy", "omarchy-shell"] {
