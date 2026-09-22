@@ -8,13 +8,66 @@ use crate::process::{capture_tool, command_exists};
 use crate::registry::{RegistryLock, now_unix};
 use anyhow::{Context, Result, bail};
 use sha2::{Digest, Sha256};
+use serde::{Deserialize, Serialize};
 use std::fs::{self, File};
 use std::ffi::CString;
 use std::io::{Read, Write};
 use std::os::fd::{AsRawFd, FromRawFd};
+use std::os::unix::ffi::OsStringExt;
 use std::os::unix::fs::{PermissionsExt, symlink};
 use std::path::{Path, PathBuf};
 use walkdir::{DirEntry, WalkDir};
+
+#[derive(Serialize, Deserialize)]
+struct DeploymentJournal {
+    target: PathBuf,
+    previous: Option<DeploymentReceipt>,
+}
+
+fn journal_path(paths: &AppPaths, id: &str) -> PathBuf {
+    paths.receipts_dir.join(format!("{id}.journal"))
+}
+
+fn publish_deployment(paths: &AppPaths, id: &str, link: &Path, source: &Path, previous: Option<DeploymentReceipt>, next: &DeploymentReceipt) -> Result<()> {
+    let journal = journal_path(paths, id);
+    write_atomic_private(&journal, &serde_json::to_vec(&DeploymentJournal { target: link.to_path_buf(), previous })?)?;
+    let operation = (|| -> Result<()> {
+        atomic_link(link, source)?;
+        save_receipt(&paths.receipt_path(id), next)?;
+        Ok(())
+    })();
+    if let Err(error) = operation {
+        recover_journal(paths, id).context("restore interrupted deployment")?;
+        return Err(error).context("publish deployment; previous link and receipt restored");
+    }
+    unlink_private(&journal)?;
+    let parent = open_directory(&paths.receipts_dir, false)?;
+    if unsafe { libc::fsync(parent.as_raw_fd()) } != 0 {
+        return Err(std::io::Error::last_os_error()).context("sync completed deployment transaction");
+    }
+    Ok(())
+}
+
+fn recover_journal(paths: &AppPaths, id: &str) -> Result<()> {
+    let path = journal_path(paths, id);
+    let Some(bytes) = read_private_file(&path)? else { return Ok(()); };
+    let journal: DeploymentJournal = serde_json::from_slice(&bytes).context("parse deployment journal")?;
+    if journal.target != paths.plugins_dir.join(id) { bail!("deployment journal target mismatch"); }
+    match journal.previous {
+        Some(receipt) => {
+            let prior = &receipt.history.get(receipt.active_index).context("invalid previous deployment in journal")?.target;
+            atomic_link(&journal.target, prior)?;
+            save_receipt(&paths.receipt_path(id), &receipt)?;
+        }
+        None => {
+            if journal.target.is_symlink() { remove_link(&journal.target)?; }
+            let receipt = paths.receipt_path(id);
+            if receipt.exists() { unlink_private(&receipt)?; }
+        }
+    }
+    unlink_private(&path)?;
+    Ok(())
+}
 
 pub fn validate(project: &Project) -> Result<ValidationReport> {
     let manifest = validate_plugin(&project.plugin_root)?;
@@ -72,6 +125,7 @@ pub fn git_state(project_root: &Path) -> GitState {
 
 pub fn deploy_live(paths: &AppPaths, project: &Project) -> Result<ActionReport> {
     let _lock = RegistryLock::acquire(paths)?;
+    recover_journal(paths, &project.id)?;
     validate(project)?;
     secure_dir(&paths.plugins_dir)?;
     let git = git_state(&project.project_root);
@@ -87,6 +141,7 @@ pub fn deploy_live(paths: &AppPaths, project: &Project) -> Result<ActionReport> 
 
 pub fn deploy_snapshot(paths: &AppPaths, project: &Project) -> Result<ActionReport> {
     let _lock = RegistryLock::acquire(paths)?;
+    recover_journal(paths, &project.id)?;
     validate(project)?;
     secure_dir(&paths.plugins_dir)?;
     let git = git_state(&project.project_root);
@@ -123,6 +178,7 @@ pub fn deploy_snapshot(paths: &AppPaths, project: &Project) -> Result<ActionRepo
 
 pub fn rollback(paths: &AppPaths, project: &Project) -> Result<ActionReport> {
     let _lock = RegistryLock::acquire(paths)?;
+    recover_journal(paths, &project.id)?;
     let receipt_path = paths.receipt_path(&project.id);
     let mut receipt = load_receipt(&receipt_path)?
         .with_context(|| format!("project '{}' has no managed deployment", project.id))?;
@@ -138,14 +194,9 @@ pub fn rollback(paths: &AppPaths, project: &Project) -> Result<ActionReport> {
     if !target.is_dir() {
         bail!("rollback target no longer exists: {}", target.display());
     }
-    let previous = receipt.history[receipt.active_index].target.clone();
-    atomic_link(&receipt.managed_target, &target)?;
+    let previous_receipt = receipt.clone();
     receipt.active_index = next_index;
-    if let Err(error) = save_receipt(&receipt_path, &receipt) {
-        atomic_link(&receipt.managed_target, &previous)
-            .context("restore previous plugin link after receipt failure")?;
-        return Err(error).context("publish rollback receipt; plugin link restored");
-    }
+    publish_deployment(paths, &project.id, &receipt.managed_target, &target, Some(previous_receipt), &receipt)?;
     let warnings = rescan_warning();
     Ok(ActionReport {
         ok: true,
@@ -158,12 +209,12 @@ pub fn rollback(paths: &AppPaths, project: &Project) -> Result<ActionReport> {
 
 pub fn undeploy(paths: &AppPaths, project: &Project) -> Result<ActionReport> {
     let _lock = RegistryLock::acquire(paths)?;
+    recover_journal(paths, &project.id)?;
     let receipt_path = paths.receipt_path(&project.id);
     let receipt = load_receipt(&receipt_path)?
         .with_context(|| format!("project '{}' has no managed deployment", project.id))?;
     verify_managed_target(&receipt)?;
-    fs::remove_file(&receipt.managed_target)
-        .with_context(|| format!("unlink {}", receipt.managed_target.display()))?;
+    remove_link(&receipt.managed_target)?;
     let warnings = rescan_warning();
     Ok(ActionReport {
         ok: true,
@@ -175,6 +226,8 @@ pub fn undeploy(paths: &AppPaths, project: &Project) -> Result<ActionReport> {
 }
 
 pub fn load_receipt_for(paths: &AppPaths, id: &str) -> Result<Option<DeploymentReceipt>> {
+    let _lock = RegistryLock::acquire(paths)?;
+    recover_journal(paths, id)?;
     load_receipt(&paths.receipt_path(id))
 }
 
@@ -196,12 +249,7 @@ fn switch_deployment(
         })?;
         verify_managed_target(receipt)?;
     }
-    let previous = existing_receipt
-        .as_ref()
-        .map(|receipt| receipt.history[receipt.active_index].target.clone());
-    atomic_link(&target, &entry.target)?;
-
-    let mut receipt = existing_receipt.unwrap_or(DeploymentReceipt {
+    let mut receipt = existing_receipt.clone().unwrap_or(DeploymentReceipt {
         schema_version: RECEIPT_SCHEMA,
         plugin_id: project.id.clone(),
         managed_target: target,
@@ -213,16 +261,7 @@ fn switch_deployment(
     }
     receipt.history.push(entry.clone());
     receipt.active_index = receipt.history.len() - 1;
-    if let Err(error) = save_receipt(&receipt_path, &receipt) {
-        if let Some(previous) = previous {
-            atomic_link(&receipt.managed_target, &previous)
-                .context("restore previous plugin link after receipt failure")?;
-        } else {
-            fs::remove_file(&receipt.managed_target)
-                .context("remove new plugin link after receipt failure")?;
-        }
-        return Err(error).context("publish deployment receipt; plugin link restored");
-    }
+    publish_deployment(paths, &project.id, &receipt.managed_target, &entry.target, existing_receipt, &receipt)?;
     let warnings = rescan_warning();
     Ok(ActionReport {
         ok: true,
@@ -245,19 +284,26 @@ fn verify_managed_target(receipt: &DeploymentReceipt) -> Result<()> {
         .history
         .get(receipt.active_index)
         .context("deployment receipt active index is invalid")?;
-    let meta = fs::symlink_metadata(&receipt.managed_target).with_context(|| {
-        format!(
-            "managed target is missing: {}",
-            receipt.managed_target.display()
-        )
-    })?;
-    if !meta.file_type().is_symlink() {
+    let parent = open_directory(receipt.managed_target.parent().context("managed target has no parent")?, false)?;
+    let name = CString::new(receipt.managed_target.file_name().context("managed target has no name")?.as_encoded_bytes())?;
+    let mut stat = std::mem::MaybeUninit::<libc::stat>::uninit();
+    if unsafe { libc::fstatat(parent.as_raw_fd(), name.as_ptr(), stat.as_mut_ptr(), libc::AT_SYMLINK_NOFOLLOW) } != 0 {
+        return Err(std::io::Error::last_os_error()).context("inspect managed plugin link");
+    }
+    let stat = unsafe { stat.assume_init() };
+    if stat.st_mode & libc::S_IFMT != libc::S_IFLNK {
         bail!(
             "managed target was replaced outside Workbench: {}",
             receipt.managed_target.display()
         );
     }
-    let actual = fs::read_link(&receipt.managed_target)?;
+    let mut buffer = vec![0_u8; 4096];
+    let size = unsafe { libc::readlinkat(parent.as_raw_fd(), name.as_ptr(), buffer.as_mut_ptr().cast(), buffer.len()) };
+    if size < 0 || size as usize == buffer.len() {
+        bail!("cannot read complete managed plugin link");
+    }
+    buffer.truncate(size as usize);
+    let actual = PathBuf::from(std::ffi::OsString::from_vec(buffer));
     if actual != current.target {
         bail!(
             "managed target changed outside Workbench: expected {}, found {}",
@@ -288,7 +334,38 @@ fn atomic_link(target: &Path, source: &Path) -> Result<()> {
     Ok(())
 }
 
+fn remove_link(target: &Path) -> Result<()> {
+    let parent = open_directory(target.parent().context("plugin target has no parent")?, false)?;
+    let name = CString::new(target.file_name().context("plugin target has no name")?.as_encoded_bytes())?;
+    if unsafe { libc::unlinkat(parent.as_raw_fd(), name.as_ptr(), 0) } != 0 {
+        return Err(std::io::Error::last_os_error()).context("unlink managed plugin");
+    }
+    if unsafe { libc::fsync(parent.as_raw_fd()) } != 0 {
+        return Err(std::io::Error::last_os_error()).context("sync plugin directory");
+    }
+    Ok(())
+}
+
+fn unlink_private(path: &Path) -> Result<()> {
+    let parent = open_directory(path.parent().context("private file has no parent")?, false)?;
+    let name = CString::new(path.file_name().context("private file has no name")?.as_encoded_bytes())?;
+    if unsafe { libc::unlinkat(parent.as_raw_fd(), name.as_ptr(), 0) } != 0 {
+        return Err(std::io::Error::last_os_error()).context("remove private file");
+    }
+    if unsafe { libc::fsync(parent.as_raw_fd()) } != 0 {
+        return Err(std::io::Error::last_os_error()).context("sync private directory");
+    }
+    Ok(())
+}
+
 fn load_receipt(path: &Path) -> Result<Option<DeploymentReceipt>> {
+    let Some(bytes) = read_private_file(path)? else { return Ok(None); };
+    let receipt = serde_json::from_slice(&bytes)
+        .with_context(|| format!("parse deployment receipt {}", path.display()))?;
+    Ok(Some(receipt))
+}
+
+fn read_private_file(path: &Path) -> Result<Option<Vec<u8>>> {
     let parent = open_directory(path.parent().context("receipt has no parent")?, false)?;
     let name = CString::new(path.file_name().context("receipt has no name")?.as_encoded_bytes())?;
     let raw = unsafe { libc::openat(parent.as_raw_fd(), name.as_ptr(), libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_CLOEXEC) };
@@ -305,9 +382,7 @@ fn load_receipt(path: &Path) -> Result<Option<DeploymentReceipt>> {
     let mut bytes = Vec::new();
     file.take(1024 * 1024 + 1).read_to_end(&mut bytes)?;
     if bytes.len() > 1024 * 1024 { bail!("deployment receipt exceeds size limit"); }
-    let receipt = serde_json::from_slice(&bytes)
-        .with_context(|| format!("parse deployment receipt {}", path.display()))?;
-    Ok(Some(receipt))
+    Ok(Some(bytes))
 }
 
 fn save_receipt(path: &Path, receipt: &DeploymentReceipt) -> Result<()> {
