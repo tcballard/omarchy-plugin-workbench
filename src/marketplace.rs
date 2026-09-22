@@ -803,9 +803,11 @@ fn inspect_managed(
         Ok((_, false)) if catalogue_revision.as_deref() == Some(&receipt.installed_revision) => {
             ("current".to_owned(), false, None)
         }
-        Ok((_, false)) if catalogue_revision.is_some() => {
-            ("update-available".to_owned(), true, None)
-        }
+        Ok((_, false)) if catalogue_revision.is_some() => (
+            "catalogue-untrusted".to_owned(),
+            false,
+            Some("Catalogue browsing is available; Workbench updates are paused until an independently verified installation authority exists".to_owned()),
+        ),
         Ok((_, false)) => ("catalogue-missing".to_owned(), false, None),
         Err(error) => ("drifted".to_owned(), false, Some(format!("{error:#}"))),
     };
@@ -1121,7 +1123,7 @@ fn matches_filters(
         })
         && (!filters.built_in_only || plugin.built_in || plugin.source_type == "builtin")
         && (!filters.verified_only || plugin.verification_status == "verified")
-        && (!filters.installable_only || is_installable(plugin))
+        && !filters.installable_only
 }
 
 fn to_result(paths: &AppPaths, plugin: &CatalogPlugin) -> MarketplacePlugin {
@@ -1134,9 +1136,7 @@ fn to_result(paths: &AppPaths, plugin: &CatalogPlugin) -> MarketplacePlugin {
         .as_ref()
         .map(|receipt| receipt.installed_revision.clone());
     let managed = receipt.is_some();
-    let update_available = managed_revision
-        .as_deref()
-        .is_some_and(|revision| revision != plugin.listing_validated_commit);
+    let update_available = false;
     MarketplacePlugin {
         id: plugin.id.clone(),
         name: plugin.name.clone(),
@@ -1152,7 +1152,7 @@ fn to_result(paths: &AppPaths, plugin: &CatalogPlugin) -> MarketplacePlugin {
         built_in,
         installed,
         managed,
-        installable: is_installable(plugin) && !installed,
+        installable: false,
         managed_revision,
         update_available,
         verification_status: plugin.verification_status.clone(),
