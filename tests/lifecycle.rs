@@ -1048,7 +1048,7 @@ fn marketplace_searches_the_cached_official_catalogue_and_marks_installed_plugin
         search["plugins"][0]["reviewedRevision"],
         MARKETPLACE_REVISION
     );
-    assert_eq!(search["plugins"][0]["installable"], true);
+    assert_eq!(search["plugins"][0]["installable"], false);
 
     fs::create_dir_all(
         harness
