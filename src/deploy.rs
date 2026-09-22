@@ -12,7 +12,7 @@ use sha2::{Digest, Sha256};
 use std::ffi::CString;
 use std::fs::{self, File};
 use std::io::{Read, Write};
-use std::os::fd::{AsRawFd, FromRawFd};
+use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::os::unix::ffi::OsStringExt;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -192,6 +192,9 @@ pub fn deploy_snapshot(paths: &AppPaths, project: &Project) -> Result<ActionRepo
         fs::remove_dir_all(&temporary)?;
         bail!("plugin source changed during snapshot copy");
     }
+    let mut staged_project = project.clone();
+    staged_project.plugin_root = temporary.clone();
+    validate(&staged_project).context("validate copied snapshot before publication")?;
     fs::rename(&temporary, &snapshot).context("publish immutable plugin snapshot")?;
     let entry = DeploymentEntry {
         mode: DeploymentMode::Snapshot,
@@ -593,35 +596,52 @@ fn content_fingerprint(root: &Path) -> Result<String> {
 }
 
 fn copy_tree(source: &Path, destination: &Path) -> Result<()> {
-    fs::create_dir(destination).with_context(|| format!("create {}", destination.display()))?;
-    fs::set_permissions(destination, fs::Permissions::from_mode(0o700))?;
-    for entry in WalkDir::new(source)
-        .follow_links(false)
-        .min_depth(1)
-        .into_iter()
-        .filter_entry(should_descend)
-    {
+    let source_fd = open_directory(source, false)?;
+    let destination_parent = open_directory(destination.parent().context("snapshot has no parent")?, false)?;
+    let name = CString::new(destination.file_name().context("snapshot has no name")?.as_encoded_bytes())?;
+    if unsafe { libc::mkdirat(destination_parent.as_raw_fd(), name.as_ptr(), 0o700) } != 0 {
+        return Err(std::io::Error::last_os_error()).context("create snapshot stage");
+    }
+    let destination_fd = open_child_directory(destination_parent.as_raw_fd(), &name)?;
+    copy_directory(&source_fd, &destination_fd)
+}
+
+fn open_child_directory(parent: i32, name: &CString) -> Result<OwnedFd> {
+    let raw = unsafe { libc::openat(parent, name.as_ptr(), libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC) };
+    if raw < 0 { return Err(std::io::Error::last_os_error()).context("open snapshot child directory"); }
+    Ok(unsafe { OwnedFd::from_raw_fd(raw) })
+}
+
+fn copy_directory(source: &OwnedFd, destination: &OwnedFd) -> Result<()> {
+    for entry in fs::read_dir(format!("/proc/self/fd/{}", source.as_raw_fd()))? {
         let entry = entry?;
-        let relative = entry.path().strip_prefix(source)?;
-        let target = destination.join(relative);
-        if entry.file_type().is_dir() {
-            fs::create_dir(&target)?;
-            fs::set_permissions(&target, fs::Permissions::from_mode(0o700))?;
-        } else if entry.file_type().is_file() {
-            fs::copy(entry.path(), &target)?;
-            let source_mode = entry.metadata()?.permissions().mode();
-            let mode = if source_mode & 0o111 != 0 {
-                0o700
-            } else {
-                0o600
-            };
-            fs::set_permissions(&target, fs::Permissions::from_mode(mode))?;
+        let name_os = entry.file_name();
+        let name = CString::new(name_os.as_encoded_bytes())?;
+        let raw = unsafe { libc::openat(source.as_raw_fd(), name.as_ptr(), libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK) };
+        if raw < 0 { return Err(std::io::Error::last_os_error()).context("open snapshot source without following links"); }
+        let mut input = unsafe { File::from_raw_fd(raw) };
+        let metadata = input.metadata()?;
+        if metadata.is_dir() {
+            if name_os == ".git" || name_os == "target" { continue; }
+            if unsafe { libc::mkdirat(destination.as_raw_fd(), name.as_ptr(), 0o700) } != 0 {
+                return Err(std::io::Error::last_os_error()).context("create snapshot directory");
+            }
+            let source_child = open_child_directory(source.as_raw_fd(), &name)?;
+            let destination_child = open_child_directory(destination.as_raw_fd(), &name)?;
+            copy_directory(&source_child, &destination_child)?;
+        } else if metadata.is_file() {
+            let mode = if metadata.permissions().mode() & 0o111 != 0 { 0o700 } else { 0o600 };
+            let output = unsafe { libc::openat(destination.as_raw_fd(), name.as_ptr(), libc::O_CREAT | libc::O_EXCL | libc::O_WRONLY | libc::O_NOFOLLOW | libc::O_CLOEXEC, mode) };
+            if output < 0 { return Err(std::io::Error::last_os_error()).context("create snapshot file"); }
+            let mut output = unsafe { File::from_raw_fd(output) };
+            std::io::copy(&mut input, &mut output)?;
+            output.sync_all()?;
         } else {
-            bail!(
-                "snapshot contains unsupported file: {}",
-                entry.path().display()
-            );
+            bail!("snapshot contains unsupported file: {}", entry.path().display());
         }
+    }
+    if unsafe { libc::fsync(destination.as_raw_fd()) } != 0 {
+        return Err(std::io::Error::last_os_error()).context("sync snapshot directory");
     }
     Ok(())
 }
@@ -648,6 +668,17 @@ mod tests {
         fs::write(dir.path().join("one"), "b").unwrap();
         let second = content_fingerprint(dir.path()).unwrap();
         assert_ne!(first, second);
+    }
+
+    #[test]
+    fn snapshot_copy_rejects_linked_source_files() {
+        let root = tempdir().unwrap();
+        let source = root.path().join("source");
+        fs::create_dir(&source).unwrap();
+        fs::write(root.path().join("outside"), "secret").unwrap();
+        symlink(root.path().join("outside"), source.join("linked")).unwrap();
+        assert!(copy_tree(&source, &root.path().join("stage")).is_err());
+        assert!(!root.path().join("stage/linked").exists());
     }
 
     #[test]
