@@ -927,6 +927,17 @@ Panel {
             }
           }
 
+          Text {
+            visible: root.marketplaceOpen
+            width: parent.width
+            text: "Catalogue browsing only · install, update and repair are paused pending a verified marketplace source"
+            color: root.barForeground
+            opacity: 0.65
+            font.family: root.bar ? root.bar.fontFamily : Style.font.family
+            font.pixelSize: Style.font.caption
+            wrapMode: Text.Wrap
+          }
+
           Rectangle {
             visible: root.installedOpen
             width: parent.width
@@ -1654,7 +1665,7 @@ Panel {
             onTriggered: root.runInstalledAction("installed-disable", installedCard.plugin.id)
           }
           WorkbenchButton {
-            visible: installedCard.marketplaceManaged
+            visible: false
             label: root.marketplaceConfirmation === "repair:" + installedCard.plugin.id
               ? "Confirm repair" : "Repair"
             enabled: !root.busy
@@ -2077,7 +2088,7 @@ Panel {
             onTriggered: root.updateMarketplace(marketplaceCard.plugin)
           }
           WorkbenchButton {
-            visible: marketplaceCard.plugin.managed
+            visible: false
             label: root.marketplaceConfirmation === "repair:" + marketplaceCard.plugin.id
               ? "Confirm repair" : "Repair"
             enabled: !root.busy
