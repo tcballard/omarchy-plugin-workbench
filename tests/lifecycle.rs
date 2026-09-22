@@ -1080,13 +1080,27 @@ fn unsigned_network_catalogue_cannot_authorize_install() {
     let (tools, log) = fake_omarchy_tools(&harness, true);
     fake_marketplace_git(&harness, &tools);
     let output = harness.run_with_tools(
-        &["marketplace-install", MARKETPLACE_ID, "--repo", MARKETPLACE_REPO,
-          "--revision", MARKETPLACE_REVISION, "--yes", "--json"],
-        &tools, &log,
+        &[
+            "marketplace-install",
+            MARKETPLACE_ID,
+            "--repo",
+            MARKETPLACE_REPO,
+            "--revision",
+            MARKETPLACE_REVISION,
+            "--yes",
+            "--json",
+        ],
+        &tools,
+        &log,
     );
     assert!(!output.status.success());
     let error: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert!(error["error"].as_str().unwrap().contains("no independently verified identity"));
+    assert!(
+        error["error"]
+            .as_str()
+            .unwrap()
+            .contains("no independently verified identity")
+    );
     assert!(!harness.installed_target().exists());
     assert!(!log.exists() || !fs::read_to_string(log).unwrap().contains("git "));
 }
@@ -1115,7 +1129,14 @@ fn unsigned_network_catalogue_cannot_authorize_update_or_repair() {
     let harness = Harness::new();
     write_marketplace_catalog(&harness);
     for args in [
-        vec!["marketplace-update", MARKETPLACE_ID, "--revision", MARKETPLACE_REVISION, "--yes", "--json"],
+        vec![
+            "marketplace-update",
+            MARKETPLACE_ID,
+            "--revision",
+            MARKETPLACE_REVISION,
+            "--yes",
+            "--json",
+        ],
         vec!["marketplace-repair", MARKETPLACE_ID, "--yes", "--json"],
     ] {
         let output = harness.run(&args);
