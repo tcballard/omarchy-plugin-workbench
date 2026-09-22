@@ -3,13 +3,15 @@ use crate::model::{
     ActionReport, DeploymentEntry, DeploymentMode, DeploymentReceipt, GitState, Project,
     RECEIPT_SCHEMA, ValidationReport,
 };
-use crate::paths::{AppPaths, secure_dir};
+use crate::paths::{AppPaths, open_directory, secure_dir};
 use crate::process::{capture_tool, command_exists};
 use crate::registry::{RegistryLock, now_unix};
 use anyhow::{Context, Result, bail};
 use sha2::{Digest, Sha256};
 use std::fs::{self, OpenOptions};
+use std::ffi::CString;
 use std::io::Write;
+use std::os::fd::AsRawFd;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt, symlink};
 use std::path::{Path, PathBuf};
 use walkdir::{DirEntry, WalkDir};
@@ -267,20 +269,23 @@ fn verify_managed_target(receipt: &DeploymentReceipt) -> Result<()> {
 }
 
 fn atomic_link(target: &Path, source: &Path) -> Result<()> {
-    if !source.is_dir() {
-        bail!("deployment source is not a directory: {}", source.display());
-    }
+    let _source = open_directory(source, false)?;
     let parent = target.parent().context("plugin target has no parent")?;
-    let temp = parent.join(format!(".workbench-link.{}.tmp", std::process::id()));
-    if temp.exists() || temp.is_symlink() {
-        fs::remove_file(&temp).context("remove stale temporary plugin link")?;
+    let parent = open_directory(parent, false)?;
+    let name = CString::new(target.file_name().context("plugin target has no name")?.as_encoded_bytes())?;
+    let temp = CString::new(format!(".workbench-link.{}.tmp", std::process::id()))?;
+    let source_name = CString::new(source.as_os_str().as_encoded_bytes())?;
+    if unsafe { libc::symlinkat(source_name.as_ptr(), parent.as_raw_fd(), temp.as_ptr()) } != 0 {
+        return Err(std::io::Error::last_os_error()).context("create temporary plugin link");
     }
-    symlink(source, &temp).with_context(|| format!("link snapshot {}", source.display()))?;
-    let result = fs::rename(&temp, target).context("atomically switch plugin deployment");
-    if result.is_err() {
-        let _ = fs::remove_file(&temp);
+    if unsafe { libc::renameat(parent.as_raw_fd(), temp.as_ptr(), parent.as_raw_fd(), name.as_ptr()) } != 0 {
+        unsafe { libc::unlinkat(parent.as_raw_fd(), temp.as_ptr(), 0) };
+        return Err(std::io::Error::last_os_error()).context("switch plugin link");
     }
-    result
+    if unsafe { libc::fsync(parent.as_raw_fd()) } != 0 {
+        return Err(std::io::Error::last_os_error()).context("sync plugin directory");
+    }
+    Ok(())
 }
 
 fn load_receipt(path: &Path) -> Result<Option<DeploymentReceipt>> {
