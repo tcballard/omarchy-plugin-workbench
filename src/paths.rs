@@ -24,7 +24,6 @@ pub struct AppPaths {
     pub marketplace_trash_dir: PathBuf,
     pub publishing_dir: PathBuf,
     pub security_reviews_dir: PathBuf,
-    pub lock_file: PathBuf,
 }
 
 impl AppPaths {
@@ -49,7 +48,6 @@ impl AppPaths {
         Self {
             home_dir: home.clone(),
             config_file: config_dir.join("projects.json"),
-            lock_file: state_dir.join("workbench.lock"),
             plugins_dir: home.join(".config/omarchy/plugins"),
             snapshots_dir: state_dir.join("snapshots"),
             receipts_dir: state_dir.join("deployments"),
