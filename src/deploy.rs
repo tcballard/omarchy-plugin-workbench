@@ -713,7 +713,11 @@ mod tests {
     #[test]
     fn interrupted_link_switch_recovers_receipt_and_link() {
         let root = tempdir().unwrap();
-        let paths = AppPaths::from_bases(root.path().join("home"), root.path().join("config"), root.path().join("state"));
+        let paths = AppPaths::from_bases(
+            root.path().join("home"),
+            root.path().join("config"),
+            root.path().join("state"),
+        );
         paths.ensure().unwrap();
         secure_dir(&paths.plugins_dir).unwrap();
         let old = root.path().join("old");
@@ -724,15 +728,38 @@ mod tests {
         let link = paths.plugins_dir.join(id);
         symlink(&old, &link).unwrap();
         let receipt = DeploymentReceipt {
-            schema_version: RECEIPT_SCHEMA, plugin_id: id.to_owned(), managed_target: link.clone(), active_index: 0,
-            history: vec![DeploymentEntry { mode: DeploymentMode::Snapshot, target: old.clone(), revision: None, dirty: false, deployed_at_unix: 0 }],
+            schema_version: RECEIPT_SCHEMA,
+            plugin_id: id.to_owned(),
+            managed_target: link.clone(),
+            active_index: 0,
+            history: vec![DeploymentEntry {
+                mode: DeploymentMode::Snapshot,
+                target: old.clone(),
+                revision: None,
+                dirty: false,
+                deployed_at_unix: 0,
+            }],
         };
         save_receipt(&paths.receipt_path(id), &receipt).unwrap();
-        write_atomic_private(&journal_path(&paths, id), &serde_json::to_vec(&DeploymentJournal { target: link.clone(), previous: Some(receipt) }).unwrap()).unwrap();
+        write_atomic_private(
+            &journal_path(&paths, id),
+            &serde_json::to_vec(&DeploymentJournal {
+                target: link.clone(),
+                previous: Some(receipt),
+            })
+            .unwrap(),
+        )
+        .unwrap();
         atomic_link(&link, &new).unwrap();
         recover_journal(&paths, id).unwrap();
         assert_eq!(fs::read_link(link).unwrap(), old);
-        assert_eq!(load_receipt(&paths.receipt_path(id)).unwrap().unwrap().active_index, 0);
+        assert_eq!(
+            load_receipt(&paths.receipt_path(id))
+                .unwrap()
+                .unwrap()
+                .active_index,
+            0
+        );
         assert!(!journal_path(&paths, id).exists());
     }
 }
