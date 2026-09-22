@@ -102,6 +102,10 @@ pub fn deploy_snapshot(paths: &AppPaths, project: &Project) -> Result<ActionRepo
         let _ = fs::remove_dir_all(&temporary);
         return Err(error);
     }
+    if content_fingerprint(&temporary)? != fingerprint || content_fingerprint(&project.plugin_root)? != fingerprint {
+        fs::remove_dir_all(&temporary)?;
+        bail!("plugin source changed during snapshot copy");
+    }
     fs::rename(&temporary, &snapshot).context("publish immutable plugin snapshot")?;
     let entry = DeploymentEntry {
         mode: DeploymentMode::Snapshot,
@@ -130,9 +134,14 @@ pub fn rollback(paths: &AppPaths, project: &Project) -> Result<ActionReport> {
     if !target.is_dir() {
         bail!("rollback target no longer exists: {}", target.display());
     }
+    let previous = receipt.history[receipt.active_index].target.clone();
     atomic_link(&receipt.managed_target, &target)?;
     receipt.active_index = next_index;
-    save_receipt(&receipt_path, &receipt)?;
+    if let Err(error) = save_receipt(&receipt_path, &receipt) {
+        atomic_link(&receipt.managed_target, &previous)
+            .context("restore previous plugin link after receipt failure")?;
+        return Err(error).context("publish rollback receipt; plugin link restored");
+    }
     let warnings = rescan_warning();
     Ok(ActionReport {
         ok: true,
@@ -183,6 +192,7 @@ fn switch_deployment(
         })?;
         verify_managed_target(receipt)?;
     }
+    let previous = existing_receipt.as_ref().map(|receipt| receipt.history[receipt.active_index].target.clone());
     atomic_link(&target, &entry.target)?;
 
     let mut receipt = existing_receipt.unwrap_or(DeploymentReceipt {
@@ -197,7 +207,16 @@ fn switch_deployment(
     }
     receipt.history.push(entry.clone());
     receipt.active_index = receipt.history.len() - 1;
-    save_receipt(&receipt_path, &receipt)?;
+    if let Err(error) = save_receipt(&receipt_path, &receipt) {
+        if let Some(previous) = previous {
+            atomic_link(&receipt.managed_target, &previous)
+                .context("restore previous plugin link after receipt failure")?;
+        } else {
+            fs::remove_file(&receipt.managed_target)
+                .context("remove new plugin link after receipt failure")?;
+        }
+        return Err(error).context("publish deployment receipt; plugin link restored");
+    }
     let warnings = rescan_warning();
     Ok(ActionReport {
         ok: true,
@@ -395,5 +414,33 @@ mod tests {
         fs::write(dir.path().join("one"), "b").unwrap();
         let second = content_fingerprint(dir.path()).unwrap();
         assert_ne!(first, second);
+    }
+
+    #[test]
+    fn receipt_failure_restores_the_preceding_link() {
+        let root = tempdir().unwrap();
+        let paths = AppPaths::from_bases(root.path().join("home"), root.path().join("config"), root.path().join("state"));
+        paths.ensure().unwrap();
+        secure_dir(&paths.plugins_dir).unwrap();
+        let old = root.path().join("old");
+        let new = root.path().join("new");
+        fs::create_dir(&old).unwrap();
+        fs::create_dir(&new).unwrap();
+        let target = paths.plugins_dir.join("io.test.plugin");
+        symlink(&old, &target).unwrap();
+        let receipt_path = paths.receipt_path("io.test.plugin");
+        let old_entry = DeploymentEntry { mode: DeploymentMode::Snapshot, target: old.clone(), revision: None, dirty: false, deployed_at_unix: 0 };
+        let receipt = DeploymentReceipt { schema_version: RECEIPT_SCHEMA, plugin_id: "io.test.plugin".to_owned(), managed_target: target.clone(), active_index: 0, history: vec![old_entry] };
+        save_receipt(&receipt_path, &receipt).unwrap();
+        fs::create_dir(receipt_path.with_extension(format!("tmp.{}", std::process::id()))).unwrap();
+        let project = Project {
+            id: "io.test.plugin".to_owned(),
+            name: "Test".to_owned(), project_root: root.path().to_path_buf(), plugin_root: root.path().to_path_buf(),
+            checks: vec![], workflows: vec![], environment: vec![], project_checks_trusted: false,
+            trusted_definition_digest: None, definition_digest: None, approved_capabilities: vec![], added_at_unix: 0,
+        };
+        let entry = DeploymentEntry { mode: DeploymentMode::Snapshot, target: new, revision: None, dirty: false, deployed_at_unix: 0 };
+        assert!(switch_deployment(&paths, &project, entry, "test").is_err());
+        assert_eq!(fs::read_link(target).unwrap(), old);
     }
 }
