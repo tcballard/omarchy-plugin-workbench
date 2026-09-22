@@ -1142,7 +1142,12 @@ fn unsigned_network_catalogue_cannot_authorize_update_or_repair() {
         let output = harness.run(&args);
         assert!(!output.status.success());
         let error: Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert!(error["error"].as_str().unwrap().contains("no independently verified identity"));
+        assert!(
+            error["error"]
+                .as_str()
+                .unwrap()
+                .contains("no independently verified identity")
+        );
     }
 }
 
