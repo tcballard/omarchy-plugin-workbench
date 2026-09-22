@@ -7,10 +7,10 @@ use crate::paths::{AppPaths, open_directory, secure_dir};
 use crate::process::{capture_tool, command_exists};
 use crate::registry::{RegistryLock, now_unix};
 use anyhow::{Context, Result, bail};
-use sha2::{Digest, Sha256};
 use serde::{Deserialize, Serialize};
-use std::fs::{self, File};
+use sha2::{Digest, Sha256};
 use std::ffi::CString;
+use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::os::fd::{AsRawFd, FromRawFd};
 use std::os::unix::ffi::OsStringExt;
@@ -28,9 +28,22 @@ fn journal_path(paths: &AppPaths, id: &str) -> PathBuf {
     paths.receipts_dir.join(format!("{id}.journal"))
 }
 
-fn publish_deployment(paths: &AppPaths, id: &str, link: &Path, source: &Path, previous: Option<DeploymentReceipt>, next: &DeploymentReceipt) -> Result<()> {
+fn publish_deployment(
+    paths: &AppPaths,
+    id: &str,
+    link: &Path,
+    source: &Path,
+    previous: Option<DeploymentReceipt>,
+    next: &DeploymentReceipt,
+) -> Result<()> {
     let journal = journal_path(paths, id);
-    write_atomic_private(&journal, &serde_json::to_vec(&DeploymentJournal { target: link.to_path_buf(), previous })?)?;
+    write_atomic_private(
+        &journal,
+        &serde_json::to_vec(&DeploymentJournal {
+            target: link.to_path_buf(),
+            previous,
+        })?,
+    )?;
     let operation = (|| -> Result<()> {
         atomic_link(link, source)?;
         save_receipt(&paths.receipt_path(id), next)?;
@@ -43,26 +56,40 @@ fn publish_deployment(paths: &AppPaths, id: &str, link: &Path, source: &Path, pr
     unlink_private(&journal)?;
     let parent = open_directory(&paths.receipts_dir, false)?;
     if unsafe { libc::fsync(parent.as_raw_fd()) } != 0 {
-        return Err(std::io::Error::last_os_error()).context("sync completed deployment transaction");
+        return Err(std::io::Error::last_os_error())
+            .context("sync completed deployment transaction");
     }
     Ok(())
 }
 
 fn recover_journal(paths: &AppPaths, id: &str) -> Result<()> {
     let path = journal_path(paths, id);
-    let Some(bytes) = read_private_file(&path)? else { return Ok(()); };
-    let journal: DeploymentJournal = serde_json::from_slice(&bytes).context("parse deployment journal")?;
-    if journal.target != paths.plugins_dir.join(id) { bail!("deployment journal target mismatch"); }
+    let Some(bytes) = read_private_file(&path)? else {
+        return Ok(());
+    };
+    let journal: DeploymentJournal =
+        serde_json::from_slice(&bytes).context("parse deployment journal")?;
+    if journal.target != paths.plugins_dir.join(id) {
+        bail!("deployment journal target mismatch");
+    }
     match journal.previous {
         Some(receipt) => {
-            let prior = &receipt.history.get(receipt.active_index).context("invalid previous deployment in journal")?.target;
+            let prior = &receipt
+                .history
+                .get(receipt.active_index)
+                .context("invalid previous deployment in journal")?
+                .target;
             atomic_link(&journal.target, prior)?;
             save_receipt(&paths.receipt_path(id), &receipt)?;
         }
         None => {
-            if journal.target.is_symlink() { remove_link(&journal.target)?; }
+            if journal.target.is_symlink() {
+                remove_link(&journal.target)?;
+            }
             let receipt = paths.receipt_path(id);
-            if receipt.exists() { unlink_private(&receipt)?; }
+            if receipt.exists() {
+                unlink_private(&receipt)?;
+            }
         }
     }
     unlink_private(&path)?;
@@ -196,7 +223,14 @@ pub fn rollback(paths: &AppPaths, project: &Project) -> Result<ActionReport> {
     }
     let previous_receipt = receipt.clone();
     receipt.active_index = next_index;
-    publish_deployment(paths, &project.id, &receipt.managed_target, &target, Some(previous_receipt), &receipt)?;
+    publish_deployment(
+        paths,
+        &project.id,
+        &receipt.managed_target,
+        &target,
+        Some(previous_receipt),
+        &receipt,
+    )?;
     let warnings = rescan_warning();
     Ok(ActionReport {
         ok: true,
@@ -261,7 +295,14 @@ fn switch_deployment(
     }
     receipt.history.push(entry.clone());
     receipt.active_index = receipt.history.len() - 1;
-    publish_deployment(paths, &project.id, &receipt.managed_target, &entry.target, existing_receipt, &receipt)?;
+    publish_deployment(
+        paths,
+        &project.id,
+        &receipt.managed_target,
+        &entry.target,
+        existing_receipt,
+        &receipt,
+    )?;
     let warnings = rescan_warning();
     Ok(ActionReport {
         ok: true,
@@ -284,10 +325,30 @@ fn verify_managed_target(receipt: &DeploymentReceipt) -> Result<()> {
         .history
         .get(receipt.active_index)
         .context("deployment receipt active index is invalid")?;
-    let parent = open_directory(receipt.managed_target.parent().context("managed target has no parent")?, false)?;
-    let name = CString::new(receipt.managed_target.file_name().context("managed target has no name")?.as_encoded_bytes())?;
+    let parent = open_directory(
+        receipt
+            .managed_target
+            .parent()
+            .context("managed target has no parent")?,
+        false,
+    )?;
+    let name = CString::new(
+        receipt
+            .managed_target
+            .file_name()
+            .context("managed target has no name")?
+            .as_encoded_bytes(),
+    )?;
     let mut stat = std::mem::MaybeUninit::<libc::stat>::uninit();
-    if unsafe { libc::fstatat(parent.as_raw_fd(), name.as_ptr(), stat.as_mut_ptr(), libc::AT_SYMLINK_NOFOLLOW) } != 0 {
+    if unsafe {
+        libc::fstatat(
+            parent.as_raw_fd(),
+            name.as_ptr(),
+            stat.as_mut_ptr(),
+            libc::AT_SYMLINK_NOFOLLOW,
+        )
+    } != 0
+    {
         return Err(std::io::Error::last_os_error()).context("inspect managed plugin link");
     }
     let stat = unsafe { stat.assume_init() };
@@ -298,7 +359,14 @@ fn verify_managed_target(receipt: &DeploymentReceipt) -> Result<()> {
         );
     }
     let mut buffer = vec![0_u8; 4096];
-    let size = unsafe { libc::readlinkat(parent.as_raw_fd(), name.as_ptr(), buffer.as_mut_ptr().cast(), buffer.len()) };
+    let size = unsafe {
+        libc::readlinkat(
+            parent.as_raw_fd(),
+            name.as_ptr(),
+            buffer.as_mut_ptr().cast(),
+            buffer.len(),
+        )
+    };
     if size < 0 || size as usize == buffer.len() {
         bail!("cannot read complete managed plugin link");
     }
@@ -318,13 +386,26 @@ fn atomic_link(target: &Path, source: &Path) -> Result<()> {
     let _source = open_directory(source, false)?;
     let parent = target.parent().context("plugin target has no parent")?;
     let parent = open_directory(parent, false)?;
-    let name = CString::new(target.file_name().context("plugin target has no name")?.as_encoded_bytes())?;
+    let name = CString::new(
+        target
+            .file_name()
+            .context("plugin target has no name")?
+            .as_encoded_bytes(),
+    )?;
     let temp = CString::new(format!(".workbench-link.{}.tmp", std::process::id()))?;
     let source_name = CString::new(source.as_os_str().as_encoded_bytes())?;
     if unsafe { libc::symlinkat(source_name.as_ptr(), parent.as_raw_fd(), temp.as_ptr()) } != 0 {
         return Err(std::io::Error::last_os_error()).context("create temporary plugin link");
     }
-    if unsafe { libc::renameat(parent.as_raw_fd(), temp.as_ptr(), parent.as_raw_fd(), name.as_ptr()) } != 0 {
+    if unsafe {
+        libc::renameat(
+            parent.as_raw_fd(),
+            temp.as_ptr(),
+            parent.as_raw_fd(),
+            name.as_ptr(),
+        )
+    } != 0
+    {
         unsafe { libc::unlinkat(parent.as_raw_fd(), temp.as_ptr(), 0) };
         return Err(std::io::Error::last_os_error()).context("switch plugin link");
     }
@@ -335,8 +416,16 @@ fn atomic_link(target: &Path, source: &Path) -> Result<()> {
 }
 
 fn remove_link(target: &Path) -> Result<()> {
-    let parent = open_directory(target.parent().context("plugin target has no parent")?, false)?;
-    let name = CString::new(target.file_name().context("plugin target has no name")?.as_encoded_bytes())?;
+    let parent = open_directory(
+        target.parent().context("plugin target has no parent")?,
+        false,
+    )?;
+    let name = CString::new(
+        target
+            .file_name()
+            .context("plugin target has no name")?
+            .as_encoded_bytes(),
+    )?;
     if unsafe { libc::unlinkat(parent.as_raw_fd(), name.as_ptr(), 0) } != 0 {
         return Err(std::io::Error::last_os_error()).context("unlink managed plugin");
     }
@@ -348,7 +437,11 @@ fn remove_link(target: &Path) -> Result<()> {
 
 fn unlink_private(path: &Path) -> Result<()> {
     let parent = open_directory(path.parent().context("private file has no parent")?, false)?;
-    let name = CString::new(path.file_name().context("private file has no name")?.as_encoded_bytes())?;
+    let name = CString::new(
+        path.file_name()
+            .context("private file has no name")?
+            .as_encoded_bytes(),
+    )?;
     if unsafe { libc::unlinkat(parent.as_raw_fd(), name.as_ptr(), 0) } != 0 {
         return Err(std::io::Error::last_os_error()).context("remove private file");
     }
@@ -359,7 +452,9 @@ fn unlink_private(path: &Path) -> Result<()> {
 }
 
 fn load_receipt(path: &Path) -> Result<Option<DeploymentReceipt>> {
-    let Some(bytes) = read_private_file(path)? else { return Ok(None); };
+    let Some(bytes) = read_private_file(path)? else {
+        return Ok(None);
+    };
     let receipt = serde_json::from_slice(&bytes)
         .with_context(|| format!("parse deployment receipt {}", path.display()))?;
     Ok(Some(receipt))
@@ -367,11 +462,23 @@ fn load_receipt(path: &Path) -> Result<Option<DeploymentReceipt>> {
 
 fn read_private_file(path: &Path) -> Result<Option<Vec<u8>>> {
     let parent = open_directory(path.parent().context("receipt has no parent")?, false)?;
-    let name = CString::new(path.file_name().context("receipt has no name")?.as_encoded_bytes())?;
-    let raw = unsafe { libc::openat(parent.as_raw_fd(), name.as_ptr(), libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_CLOEXEC) };
+    let name = CString::new(
+        path.file_name()
+            .context("receipt has no name")?
+            .as_encoded_bytes(),
+    )?;
+    let raw = unsafe {
+        libc::openat(
+            parent.as_raw_fd(),
+            name.as_ptr(),
+            libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+        )
+    };
     if raw < 0 {
         let error = std::io::Error::last_os_error();
-        if error.kind() == std::io::ErrorKind::NotFound { return Ok(None); }
+        if error.kind() == std::io::ErrorKind::NotFound {
+            return Ok(None);
+        }
         return Err(error).context("open deployment receipt");
     }
     let mut file = unsafe { File::from_raw_fd(raw) };
@@ -381,7 +488,9 @@ fn read_private_file(path: &Path) -> Result<Option<Vec<u8>>> {
     }
     let mut bytes = Vec::new();
     file.take(1024 * 1024 + 1).read_to_end(&mut bytes)?;
-    if bytes.len() > 1024 * 1024 { bail!("deployment receipt exceeds size limit"); }
+    if bytes.len() > 1024 * 1024 {
+        bail!("deployment receipt exceeds size limit");
+    }
     Ok(Some(bytes))
 }
 
@@ -392,20 +501,46 @@ fn save_receipt(path: &Path, receipt: &DeploymentReceipt) -> Result<()> {
 
 fn write_atomic_private(path: &Path, bytes: &[u8]) -> Result<()> {
     let parent = open_directory(path.parent().context("receipt has no parent")?, false)?;
-    let name = CString::new(path.file_name().context("receipt has no name")?.as_encoded_bytes())?;
-    let temporary = CString::new(format!("{}.tmp.{}", name.to_string_lossy(), std::process::id()))?;
-    let raw = unsafe { libc::openat(parent.as_raw_fd(), temporary.as_ptr(), libc::O_CREAT | libc::O_EXCL | libc::O_WRONLY | libc::O_NOFOLLOW | libc::O_CLOEXEC, 0o600) };
-    if raw < 0 { return Err(std::io::Error::last_os_error()).context("create private receipt stage"); }
+    let name = CString::new(
+        path.file_name()
+            .context("receipt has no name")?
+            .as_encoded_bytes(),
+    )?;
+    let temporary = CString::new(format!(
+        "{}.tmp.{}",
+        name.to_string_lossy(),
+        std::process::id()
+    ))?;
+    let raw = unsafe {
+        libc::openat(
+            parent.as_raw_fd(),
+            temporary.as_ptr(),
+            libc::O_CREAT | libc::O_EXCL | libc::O_WRONLY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+            0o600,
+        )
+    };
+    if raw < 0 {
+        return Err(std::io::Error::last_os_error()).context("create private receipt stage");
+    }
     let mut file = unsafe { File::from_raw_fd(raw) };
     let result = (|| -> Result<()> {
         file.write_all(bytes)?;
         file.write_all(b"\n")?;
         file.sync_all()?;
-        if unsafe { libc::renameat(parent.as_raw_fd(), temporary.as_ptr(), parent.as_raw_fd(), name.as_ptr()) } != 0 {
+        if unsafe {
+            libc::renameat(
+                parent.as_raw_fd(),
+                temporary.as_ptr(),
+                parent.as_raw_fd(),
+                name.as_ptr(),
+            )
+        } != 0
+        {
             return Err(std::io::Error::last_os_error()).context("publish deployment receipt");
         }
         if unsafe { libc::fsync(parent.as_raw_fd()) } != 0 {
-            return Err(std::io::Error::last_os_error()).context("sync deployment receipts directory");
+            return Err(std::io::Error::last_os_error())
+                .context("sync deployment receipts directory");
         }
         Ok(())
     })();
@@ -546,7 +681,10 @@ mod tests {
             history: vec![old_entry],
         };
         save_receipt(&receipt_path, &receipt).unwrap();
-        fs::create_dir(receipt_path.with_file_name(format!("io.test.plugin.json.tmp.{}", std::process::id()))).unwrap();
+        fs::create_dir(
+            receipt_path.with_file_name(format!("io.test.plugin.json.tmp.{}", std::process::id())),
+        )
+        .unwrap();
         let project = Project {
             id: "io.test.plugin".to_owned(),
             name: "Test".to_owned(),
@@ -570,5 +708,31 @@ mod tests {
         };
         assert!(switch_deployment(&paths, &project, entry, "test").is_err());
         assert_eq!(fs::read_link(target).unwrap(), old);
+    }
+
+    #[test]
+    fn interrupted_link_switch_recovers_receipt_and_link() {
+        let root = tempdir().unwrap();
+        let paths = AppPaths::from_bases(root.path().join("home"), root.path().join("config"), root.path().join("state"));
+        paths.ensure().unwrap();
+        secure_dir(&paths.plugins_dir).unwrap();
+        let old = root.path().join("old");
+        let new = root.path().join("new");
+        fs::create_dir(&old).unwrap();
+        fs::create_dir(&new).unwrap();
+        let id = "io.test.plugin";
+        let link = paths.plugins_dir.join(id);
+        symlink(&old, &link).unwrap();
+        let receipt = DeploymentReceipt {
+            schema_version: RECEIPT_SCHEMA, plugin_id: id.to_owned(), managed_target: link.clone(), active_index: 0,
+            history: vec![DeploymentEntry { mode: DeploymentMode::Snapshot, target: old.clone(), revision: None, dirty: false, deployed_at_unix: 0 }],
+        };
+        save_receipt(&paths.receipt_path(id), &receipt).unwrap();
+        write_atomic_private(&journal_path(&paths, id), &serde_json::to_vec(&DeploymentJournal { target: link.clone(), previous: Some(receipt) }).unwrap()).unwrap();
+        atomic_link(&link, &new).unwrap();
+        recover_journal(&paths, id).unwrap();
+        assert_eq!(fs::read_link(link).unwrap(), old);
+        assert_eq!(load_receipt(&paths.receipt_path(id)).unwrap().unwrap().active_index, 0);
+        assert!(!journal_path(&paths, id).exists());
     }
 }
