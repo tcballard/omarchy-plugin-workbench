@@ -14,7 +14,7 @@ use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::os::fd::{AsRawFd, FromRawFd};
 use std::os::unix::ffi::OsStringExt;
-use std::os::unix::fs::{PermissionsExt, symlink};
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use walkdir::{DirEntry, WalkDir};
 
@@ -481,7 +481,7 @@ fn read_private_file(path: &Path) -> Result<Option<Vec<u8>>> {
         }
         return Err(error).context("open deployment receipt");
     }
-    let mut file = unsafe { File::from_raw_fd(raw) };
+    let file = unsafe { File::from_raw_fd(raw) };
     let meta = file.metadata()?;
     if !meta.is_file() || meta.len() > 1024 * 1024 {
         bail!("invalid deployment receipt: {}", path.display());
@@ -637,6 +637,7 @@ fn unique_path(parent: &Path, base: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::fs::symlink;
     use tempfile::tempdir;
 
     #[test]
