@@ -11,7 +11,15 @@ use std::io::Write;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
-const CATALOG_URL: &str = "https://omarchyplugins.com/catalog.json";
+const CATALOG_URL: &str = "https://plugins.omarchy.org/catalog.json";
+
+// The public catalogue can be browsed, but has no independently verifiable
+// signature or digest. Never use its repository/revision fields to deploy code.
+fn require_verified_install_authority() -> Result<()> {
+    bail!(
+        "Workbench installs and updates are paused: the network catalogue has no independently verified identity. Use the installed Omarchy marketplace"
+    )
+}
 const CATALOG_SCHEMA: u32 = 2;
 const MAX_CATALOG_BYTES: u64 = 8 * 1024 * 1024;
 const MAX_CATALOG_PLUGINS: usize = 5_000;
@@ -222,10 +230,7 @@ pub fn refresh(paths: &AppPaths) -> Result<RefreshReport> {
                 "--fail".to_owned(),
                 "--silent".to_owned(),
                 "--show-error".to_owned(),
-                "--location".to_owned(),
                 "--proto".to_owned(),
-                "=https".to_owned(),
-                "--proto-redir".to_owned(),
                 "=https".to_owned(),
                 "--connect-timeout".to_owned(),
                 "10".to_owned(),
@@ -331,6 +336,7 @@ pub fn install(
     enable: bool,
     confirmed: bool,
 ) -> Result<InstallReport> {
+    require_verified_install_authority()?;
     if !confirmed {
         bail!("refusing to install without explicit confirmation; pass --yes after review");
     }
@@ -520,6 +526,7 @@ pub fn update_managed(
     reviewed_revision: &str,
     confirmed: bool,
 ) -> Result<LifecycleReport> {
+    require_verified_install_authority()?;
     require_lifecycle_confirmation(confirmed, "update")?;
     validate_plugin_id(id)?;
     validate_revision(reviewed_revision)?;
@@ -621,6 +628,7 @@ pub fn update_managed(
 }
 
 pub fn repair(paths: &AppPaths, id: &str, confirmed: bool) -> Result<LifecycleReport> {
+    require_verified_install_authority()?;
     require_lifecycle_confirmation(confirmed, "repair")?;
     validate_plugin_id(id)?;
     for command in ["git", "omarchy", "omarchy-shell"] {
@@ -795,9 +803,11 @@ fn inspect_managed(
         Ok((_, false)) if catalogue_revision.as_deref() == Some(&receipt.installed_revision) => {
             ("current".to_owned(), false, None)
         }
-        Ok((_, false)) if catalogue_revision.is_some() => {
-            ("update-available".to_owned(), true, None)
-        }
+        Ok((_, false)) if catalogue_revision.is_some() => (
+            "catalogue-untrusted".to_owned(),
+            false,
+            Some("Catalogue browsing is available; Workbench updates are paused until an independently verified installation authority exists".to_owned()),
+        ),
         Ok((_, false)) => ("catalogue-missing".to_owned(), false, None),
         Err(error) => ("drifted".to_owned(), false, Some(format!("{error:#}"))),
     };
@@ -1113,7 +1123,7 @@ fn matches_filters(
         })
         && (!filters.built_in_only || plugin.built_in || plugin.source_type == "builtin")
         && (!filters.verified_only || plugin.verification_status == "verified")
-        && (!filters.installable_only || is_installable(plugin))
+        && !filters.installable_only
 }
 
 fn to_result(paths: &AppPaths, plugin: &CatalogPlugin) -> MarketplacePlugin {
@@ -1126,9 +1136,7 @@ fn to_result(paths: &AppPaths, plugin: &CatalogPlugin) -> MarketplacePlugin {
         .as_ref()
         .map(|receipt| receipt.installed_revision.clone());
     let managed = receipt.is_some();
-    let update_available = managed_revision
-        .as_deref()
-        .is_some_and(|revision| revision != plugin.listing_validated_commit);
+    let update_available = false;
     MarketplacePlugin {
         id: plugin.id.clone(),
         name: plugin.name.clone(),
@@ -1144,7 +1152,7 @@ fn to_result(paths: &AppPaths, plugin: &CatalogPlugin) -> MarketplacePlugin {
         built_in,
         installed,
         managed,
-        installable: is_installable(plugin) && !installed,
+        installable: false,
         managed_revision,
         update_available,
         verification_status: plugin.verification_status.clone(),

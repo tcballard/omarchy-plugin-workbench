@@ -1048,7 +1048,7 @@ fn marketplace_searches_the_cached_official_catalogue_and_marks_installed_plugin
         search["plugins"][0]["reviewedRevision"],
         MARKETPLACE_REVISION
     );
-    assert_eq!(search["plugins"][0]["installable"], true);
+    assert_eq!(search["plugins"][0]["installable"], false);
 
     fs::create_dir_all(
         harness
@@ -1074,12 +1074,11 @@ fn marketplace_searches_the_cached_official_catalogue_and_marks_installed_plugin
 }
 
 #[test]
-fn marketplace_installs_and_enables_only_the_exact_reviewed_revision() {
+fn unsigned_network_catalogue_cannot_authorize_install() {
     let harness = Harness::new();
     write_marketplace_catalog(&harness);
     let (tools, log) = fake_omarchy_tools(&harness, true);
     fake_marketplace_git(&harness, &tools);
-
     let output = harness.run_with_tools(
         &[
             "marketplace-install",
@@ -1088,91 +1087,22 @@ fn marketplace_installs_and_enables_only_the_exact_reviewed_revision() {
             MARKETPLACE_REPO,
             "--revision",
             MARKETPLACE_REVISION,
-            "--enable",
             "--yes",
             "--json",
         ],
         &tools,
         &log,
     );
-    assert!(
-        output.status.success(),
-        "{}\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(report["revision"], MARKETPLACE_REVISION);
-    assert_eq!(report["installed"], true);
-    assert_eq!(report["enabled"], true);
-    assert!(
-        harness
-            .home
-            .join(format!(
-                ".config/omarchy/plugins/{MARKETPLACE_ID}/Panel.qml"
-            ))
-            .is_file()
-    );
-    let calls = fs::read_to_string(log).unwrap();
-    assert!(calls.contains(&format!("checkout --detach {MARKETPLACE_REVISION}")));
-    assert!(calls.contains("omarchy plugin validate"));
-    assert!(calls.contains("omarchy-shell shell rescanPlugins"));
-    assert!(calls.contains(&format!("omarchy plugin enable {MARKETPLACE_ID}")));
-}
-
-#[test]
-fn marketplace_install_refuses_missing_confirmation_and_stale_review() {
-    let harness = Harness::new();
-    write_marketplace_catalog(&harness);
-    let (tools, log) = fake_omarchy_tools(&harness, true);
-    fake_marketplace_git(&harness, &tools);
-
-    let unconfirmed = harness.run_with_tools(
-        &[
-            "marketplace-install",
-            MARKETPLACE_ID,
-            "--repo",
-            MARKETPLACE_REPO,
-            "--revision",
-            MARKETPLACE_REVISION,
-            "--json",
-        ],
-        &tools,
-        &log,
-    );
-    assert!(!unconfirmed.status.success());
-    let error: Value = serde_json::from_slice(&unconfirmed.stdout).unwrap();
+    assert!(!output.status.success());
+    let error: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert!(
         error["error"]
             .as_str()
             .unwrap()
-            .contains("explicit confirmation")
+            .contains("no independently verified identity")
     );
-
-    let stale_revision = "ffffffffffffffffffffffffffffffffffffffff";
-    let stale = harness.run_with_tools(
-        &[
-            "marketplace-install",
-            MARKETPLACE_ID,
-            "--repo",
-            MARKETPLACE_REPO,
-            "--revision",
-            stale_revision,
-            "--yes",
-            "--json",
-        ],
-        &tools,
-        &log,
-    );
-    assert!(!stale.status.success());
-    let error: Value = serde_json::from_slice(&stale.stdout).unwrap();
-    assert!(
-        error["error"]
-            .as_str()
-            .unwrap()
-            .contains("changed since review")
-    );
-    assert!(!log.exists() || !fs::read_to_string(&log).unwrap().contains("git "));
+    assert!(!harness.installed_target().exists());
+    assert!(!log.exists() || !fs::read_to_string(log).unwrap().contains("git "));
 }
 
 #[test]
@@ -1195,166 +1125,29 @@ fn marketplace_rejects_a_symlinked_catalogue_cache() {
 }
 
 #[test]
-fn marketplace_receipts_drive_verified_updates_and_exclude_generic_updates() {
+fn unsigned_network_catalogue_cannot_authorize_update_or_repair() {
     let harness = Harness::new();
     write_marketplace_catalog(&harness);
-    let (tools, log) = fake_omarchy_tools(&harness, true);
-    fake_marketplace_git(&harness, &tools);
-    let installed = harness.run_with_tools(
-        &[
-            "marketplace-install",
-            MARKETPLACE_ID,
-            "--repo",
-            MARKETPLACE_REPO,
-            "--revision",
-            MARKETPLACE_REVISION,
-            "--yes",
-            "--json",
-        ],
-        &tools,
-        &log,
-    );
-    assert!(installed.status.success());
-    let receipt = harness.home.join(format!(
-        ".local/state/omarchy/plugin-workbench/marketplace/receipts/{MARKETPLACE_ID}.json"
-    ));
-    assert!(receipt.is_file());
-
-    let next = "89abcdef0123456789abcdef0123456789abcdef";
-    write_marketplace_catalog_at(&harness, next);
-    let managed = harness.run_with_tools(&["marketplace-managed", "--json"], &tools, &log);
-    assert!(managed.status.success());
-    let managed: Value = serde_json::from_slice(&managed.stdout).unwrap();
-    assert_eq!(managed["updatesAvailable"], 1);
-    assert_eq!(managed["plugins"][0]["catalogueRevision"], next);
-
-    let generic = harness.run_with_tools(&["updates", "--json"], &tools, &log);
-    assert!(generic.status.success());
-    let generic: Value = serde_json::from_slice(&generic.stdout).unwrap();
-    assert_eq!(generic["plugins"], Value::Array(Vec::new()));
-
-    let updated = harness.run_with_tools(
-        &[
+    for args in [
+        vec![
             "marketplace-update",
             MARKETPLACE_ID,
             "--revision",
-            next,
-            "--yes",
-            "--json",
-        ],
-        &tools,
-        &log,
-    );
-    assert!(
-        updated.status.success(),
-        "{}",
-        String::from_utf8_lossy(&updated.stdout)
-    );
-    let updated: Value = serde_json::from_slice(&updated.stdout).unwrap();
-    assert_eq!(updated["revision"], next);
-    let receipt: Value = serde_json::from_slice(&fs::read(receipt).unwrap()).unwrap();
-    assert_eq!(receipt["installedRevision"], next);
-}
-
-#[test]
-fn marketplace_repair_and_uninstall_retain_recovery_copies() {
-    let harness = Harness::new();
-    write_marketplace_catalog(&harness);
-    let (tools, log) = fake_omarchy_tools(&harness, true);
-    fake_marketplace_git(&harness, &tools);
-    let installed = harness.run_with_tools(
-        &[
-            "marketplace-install",
-            MARKETPLACE_ID,
-            "--repo",
-            MARKETPLACE_REPO,
-            "--revision",
             MARKETPLACE_REVISION,
             "--yes",
             "--json",
         ],
-        &tools,
-        &log,
-    );
-    assert!(installed.status.success());
-    let target = harness
-        .home
-        .join(format!(".config/omarchy/plugins/{MARKETPLACE_ID}"));
-    fs::write(target.join("damaged.txt"), "recover me").unwrap();
-
-    let repaired = harness.run_with_tools(
-        &["marketplace-repair", MARKETPLACE_ID, "--yes", "--json"],
-        &tools,
-        &log,
-    );
-    assert!(repaired.status.success());
-    let repaired: Value = serde_json::from_slice(&repaired.stdout).unwrap();
-    let repair_backup = PathBuf::from(repaired["retainedBackup"].as_str().unwrap());
-    assert_eq!(
-        fs::read_to_string(repair_backup.join("damaged.txt")).unwrap(),
-        "recover me"
-    );
-
-    let removed = harness.run_with_tools(
-        &["marketplace-uninstall", MARKETPLACE_ID, "--yes", "--json"],
-        &tools,
-        &log,
-    );
-    assert!(removed.status.success());
-    let removed: Value = serde_json::from_slice(&removed.stdout).unwrap();
-    assert!(!target.exists());
-    assert!(PathBuf::from(removed["retainedBackup"].as_str().unwrap()).is_dir());
-    assert!(
-        !harness
-            .home
-            .join(format!(
-                ".local/state/omarchy/plugin-workbench/marketplace/receipts/{MARKETPLACE_ID}.json"
-            ))
-            .exists()
-    );
-}
-
-#[test]
-fn marketplace_lifecycle_refuses_symlink_target_drift() {
-    let harness = Harness::new();
-    write_marketplace_catalog(&harness);
-    let (tools, log) = fake_omarchy_tools(&harness, true);
-    fake_marketplace_git(&harness, &tools);
-    let installed = harness.run_with_tools(
-        &[
-            "marketplace-install",
-            MARKETPLACE_ID,
-            "--repo",
-            MARKETPLACE_REPO,
-            "--revision",
-            MARKETPLACE_REVISION,
-            "--yes",
-            "--json",
-        ],
-        &tools,
-        &log,
-    );
-    assert!(installed.status.success());
-    let target = harness
-        .home
-        .join(format!(".config/omarchy/plugins/{MARKETPLACE_ID}"));
-    let external = harness.root.path().join("external-managed-plugin");
-    fs::rename(&target, &external).unwrap();
-    symlink(&external, &target).unwrap();
-
-    for action in ["marketplace-repair", "marketplace-uninstall"] {
-        let output =
-            harness.run_with_tools(&[action, MARKETPLACE_ID, "--yes", "--json"], &tools, &log);
+        vec!["marketplace-repair", MARKETPLACE_ID, "--yes", "--json"],
+    ] {
+        let output = harness.run(&args);
         assert!(!output.status.success());
         let error: Value = serde_json::from_slice(&output.stdout).unwrap();
         assert!(
             error["error"]
                 .as_str()
                 .unwrap()
-                .contains("not a normal directory")
+                .contains("no independently verified identity")
         );
-        assert!(target.is_symlink());
-        assert!(external.join("Panel.qml").is_file());
     }
 }
 
