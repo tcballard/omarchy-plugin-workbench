@@ -1,13 +1,19 @@
 # Changelog
 
-## Unreleased
+## 0.3.1 — 2026-09-23
+
+- Fetch the canonical marketplace catalogue without redirects and keep catalogue-driven installation, update, and repair disabled until an independently verifiable installation authority exists.
+- Bound trusted processes and their descendants while producing output; resolve built-ins from trusted locations with a minimal environment.
+- Anchor state and deployment operations to no-follow directory descriptors, verify copied snapshots, and recover interrupted link/receipt transactions.
+- Correct Doctor's Omarchy version probe and desktop context for Hyprland probes.
+- Align the manifest, release notes, and live acceptance instructions with browse-only catalogue behavior.
 
 - Recognise package-owned plugin symlinks using the resolved manifest's pacman owner; show package ownership and distinguish shell disabling from package uninstall. Report failed ownership checks explicitly instead of labelling those links as development installations.
 
-- Focus Plugin Workbench exclusively on discovering, installing, maintaining, updating, and building Omarchy plugins.
+- Focus Plugin Workbench on browsing, maintaining, updating, and building Omarchy plugins.
 - Reorganise the native panel around Discover, Installed, Updates, and Build lifecycle modes with Ctrl+1/2/3/4 switching and a shared keyboard-scroll model.
 - Inventory every plugin Omarchy discovers and classify first-party, marketplace-managed, direct Git, live-link, and local installations.
-- Add bounded Installed-view enable and disable controls, safe source-aware update actions, and marketplace repair/removal controls.
+- Add bounded Installed-view enable and disable controls, safe source-aware update actions, and managed-installation removal controls; catalogue-driven repair is disabled pending verifiable authority.
 - Publish the stable native-panel toggle contract and proposed unclaimed `Super+Alt+P` first-party Omarchy binding without mutating user configuration.
 - Add a native New plugin flow with validated Panel, bar-widget, and service starters, atomic no-overwrite creation, Git initialisation, and automatic registration.
 - Give each project one state-aware recommended action while keeping specialist controls behind More actions; add explicit Undeploy and Forget controls.
