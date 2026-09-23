@@ -1,6 +1,6 @@
 # Plugin Workbench for Omarchy
 
-Plugin Workbench is a native Omarchy Quattro bar panel plus a bounded Rust helper for discovering, installing, developing, and managing shell plugins.
+Plugin Workbench is a native Omarchy Quattro bar panel plus a bounded Rust helper for browsing, developing, and managing shell plugins.
 
 On the proposed first-party integration, install the helper package and launch Workbench with its native binding:
 
@@ -25,7 +25,7 @@ rm -rf -- "$HOME/.config/omarchy/plugin-workbench" \
 
 The native panel is organised around the complete plugin lifecycle:
 
-- **Discover** searches the cached official marketplace catalogue and installs reviewed snapshots.
+- **Discover** searches the cached official marketplace catalogue for browsing. Catalogue-driven installation is currently unavailable.
 - **Installed** inventories every plugin Omarchy discovers, identifies how it is managed, enables or disables eligible plugins, and offers only safe updates for its source type.
 - **Updates** separates exact-revision review and application from everyday inventory management.
 - **Build** creates, links, validates, tests, and prepares personal plugin projects.
@@ -41,7 +41,7 @@ The workbench does not scan your home directory, execute install hooks, invoke a
 
 ## Status
 
-The `0.3.0` line turns the established Workbench into a focused plugin management suite with automated Rust and lifecycle coverage. It is pinned to:
+The `0.3.0` line adds plugin development and management workflows with automated Rust and lifecycle coverage. It is pinned to:
 
 - Omarchy Quattro contract: `b686ed892d9c3020c3336203f6d34cc75b544e2b`
 - Omarchy plugin manifest schema: `1`
@@ -108,30 +108,21 @@ bin/omarchy-plugin-workbench new /absolute/path/my-plugin \
 
 `panel` creates both a panel and its bar-widget launcher. `bar-widget` and `service` create focused single-entry-point starters. Workbench stages and validates the complete tree before publishing it, refuses an existing destination, initializes a `main` Git repository when Git is available, and never creates a commit or runs plugin code.
 
-## Search and install official marketplace listings
+## Browse official marketplace listings
 
-Open **Discover** in the panel to refresh the official catalogue, search locally by name, description, author, category, kind, or tag, and filter built-in, verified, installable, or installed listings. “Official marketplace” describes the catalogue source; community listings are not presented as Omarchy-authored plugins. Built-ins are browse-only because Omarchy manages them.
+Open **Discover** in the panel to refresh the official catalogue and search locally by name, description, author, category, kind, or tag. “Official marketplace” describes the catalogue source; community listings are not presented as Omarchy-authored plugins. All listings are browse-only in Workbench.
 
-Workbench caches [`https://omarchyplugins.com/catalog.json`](https://omarchyplugins.com/catalog.json) only when you explicitly refresh it. Search then works against that private local cache without a network request:
+Workbench caches [`https://plugins.omarchy.org/catalog.json`](https://plugins.omarchy.org/catalog.json) only when you explicitly refresh it. Search then works against that private local cache without a network request:
 
 ```bash
 bin/omarchy-plugin-workbench marketplace-refresh
 bin/omarchy-plugin-workbench marketplace-search clipboard --verified --json
-bin/omarchy-plugin-workbench marketplace-search --category Development --installable
+bin/omarchy-plugin-workbench marketplace-search --category Development
 ```
 
-For an installable community root plugin, search returns its repository and full marketplace-reviewed commit. Installation requires those exact values plus confirmation; Workbench rejects a stale review, checks out the detached commit with Git hooks disabled, validates the manifest internally and through Omarchy, then publishes and optionally enables it:
+The catalogue is public network input, not an independently signed package index. Workbench cannot establish installation authority from catalogue data alone. Catalogue-driven install, update, and repair commands fail closed until a verifiable authority mechanism exists. Use Omarchy's own plugin commands to install plugins after reviewing their source. Enabling third-party plugin code runs it with your user permissions.
 
-```bash
-bin/omarchy-plugin-workbench marketplace-install io.github.example.plugin \
-  --repo https://github.com/example/plugin \
-  --revision FULL_40_CHARACTER_REVIEWED_COMMIT \
-  --enable --yes
-```
-
-The catalogue is public network input protected by HTTPS, not a signed package index. A reviewed commit limits moving-target risk but does not make third-party code safe; enabling a plugin runs it with your user permissions.
-
-Workbench records every installation it creates. **Installed** shows the complete host view; **Workbench managed** listings can be updated only to the catalogue's next exact reviewed commit, repaired from that reviewed snapshot, or uninstalled with a recovery copy retained in private state. Marketplace-managed plugins are intentionally excluded from the separate mutable-remote update path.
+**Installed** shows the host inventory. For an installation Workbench already created, its ownership receipt remains available and Workbench can uninstall it with a recovery copy retained in private state. Marketplace-managed plugins are excluded from the separate mutable-remote update path.
 
 ```bash
 bin/omarchy-plugin-workbench portfolio
@@ -139,9 +130,6 @@ bin/omarchy-plugin-workbench installed
 bin/omarchy-plugin-workbench installed-disable io.github.example.plugin
 bin/omarchy-plugin-workbench installed-enable io.github.example.plugin
 bin/omarchy-plugin-workbench marketplace-managed
-bin/omarchy-plugin-workbench marketplace-update io.github.example.plugin \
-  --revision FULL_REVIEWED_COMMIT --yes
-bin/omarchy-plugin-workbench marketplace-repair io.github.example.plugin --yes
 bin/omarchy-plugin-workbench marketplace-uninstall io.github.example.plugin --yes
 ```
 
