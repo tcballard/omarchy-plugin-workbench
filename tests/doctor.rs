@@ -11,10 +11,22 @@ fn doctor_uses_supported_version_command_and_preserves_desktop_context() {
     fs::create_dir_all(&tools).unwrap();
     fs::create_dir_all(&home).unwrap();
     for (name, body) in [
-        ("omarchy", "test \"$1\" = version || exit 42\nprintf '4.0.3\\n'"),
-        ("omarchy-shell", "test \"$XDG_RUNTIME_DIR\" = /test/runtime || exit 43\nexit 0"),
-        ("hyprctl", "test \"$HYPRLAND_INSTANCE_SIGNATURE\" = test-instance || exit 44\ntest \"$XDG_RUNTIME_DIR\" = /test/runtime || exit 45\ntest \"${BASH_ENV-unset}\" = unset || exit 46\nexit 0"),
-        ("Hyprland", "test \"$WAYLAND_DISPLAY\" = wayland-test || exit 47\nexit 0"),
+        (
+            "omarchy",
+            "test \"$1\" = version || exit 42\nprintf '4.0.3\\n'",
+        ),
+        (
+            "omarchy-shell",
+            "test \"$XDG_RUNTIME_DIR\" = /test/runtime || exit 43\nexit 0",
+        ),
+        (
+            "hyprctl",
+            "test \"$HYPRLAND_INSTANCE_SIGNATURE\" = test-instance || exit 44\ntest \"$XDG_RUNTIME_DIR\" = /test/runtime || exit 45\ntest \"${BASH_ENV-unset}\" = unset || exit 46\nexit 0",
+        ),
+        (
+            "Hyprland",
+            "test \"$WAYLAND_DISPLAY\" = wayland-test || exit 47\nexit 0",
+        ),
     ] {
         let path = tools.join(name);
         fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
@@ -32,10 +44,18 @@ fn doctor_uses_supported_version_command_and_preserves_desktop_context() {
         .env("BASH_ENV", "/test/untrusted")
         .output()
         .unwrap();
-    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let report: Value = serde_json::from_slice(&output.stdout).unwrap();
     for name in ["omarchy", "omarchy-shell", "hyprctl", "Hyprland"] {
-        assert_eq!(report["tools"][name]["ok"], true, "{name}: {}", report["tools"][name]);
+        assert_eq!(
+            report["tools"][name]["ok"], true,
+            "{name}: {}",
+            report["tools"][name]
+        );
     }
     assert_eq!(report["ok"], true);
 }
