@@ -409,7 +409,7 @@ pub fn doctor(paths: &AppPaths) -> DoctorReport {
     let mut tools = BTreeMap::new();
     for (name, args) in [
         ("git", vec!["--version"]),
-        ("omarchy", vec!["--version"]),
+        ("omarchy", vec!["version"]),
         ("omarchy-shell", vec!["shell", "ping"]),
         ("qmllint", vec!["--version"]),
         ("qs", vec!["--version"]),
