@@ -14,10 +14,18 @@ Complete this matrix on an actual official x86-64 Omarchy Quattro desktop before
 
 ```bash
 cargo build --workspace --locked --release
-sudo install -Dm755 target/release/omarchy-plugin-workbench /usr/bin/omarchy-plugin-workbench
+omarchy-pkg-add omarchy-plugin-workbench
+sha256sum /usr/bin/omarchy-plugin-workbench
+bin/omarchy-plugin-workbench --version
 omarchy plugin validate .
 qmllint -I "$OMARCHY_PATH/shell" BarWidget.qml Panel.qml
 ```
+
+The installed package executable must match the SHA-256 pinned in
+`bin/omarchy-plugin-workbench`. A different or missing executable must fail
+closed, including when a local `target/release` build is present. A development
+build can be run directly by its path for CLI work; it does not replace the
+reviewed helper invoked by the QML plugin.
 
 ## Native shell matrix
 

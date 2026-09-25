@@ -9,7 +9,11 @@ omarchy-pkg-add omarchy-plugin-workbench
 # Super + Alt + P
 ```
 
-For development against this repository, build the helper and link the QML module through Omarchy's plugin loader:
+The QML plugin requires the matching helper package. Its launcher verifies the
+installed helper's exact release digest before running it. An older package or
+a different `/usr/bin/omarchy-plugin-workbench` fails closed. For development
+against this repository, build the helper for direct CLI use and link the QML
+module through Omarchy's plugin loader:
 
 ```bash
 cargo build --workspace --locked --release
