@@ -1,14 +1,23 @@
-#!/usr/bin/env bash
+#!/bin/bash
 set -euo pipefail
 
-script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
-repo_root="$(cd -- "$script_dir/.." && pwd -P)"
+helper=/usr/bin/omarchy-plugin-workbench
+# SHA-256 of the v0.3.1 attested x86_64 release helper. Update this only
+# alongside a reviewed helper build and the corresponding package revision.
+expected_sha256=48d62d2e30aeca377f416fafd3a1e5810f69412f595bb1dfa2c4030edd867f31
 
-if [[ -x /usr/bin/omarchy-plugin-workbench ]]; then
-  exec /usr/bin/omarchy-plugin-workbench "$@"
-elif [[ -x $repo_root/target/release/omarchy-plugin-workbench ]]; then
-  exec "$repo_root/target/release/omarchy-plugin-workbench" "$@"
-else
-  echo "Plugin Workbench needs the omarchy-plugin-workbench package or a local release build" >&2
+if [[ ! -f $helper || ! -x $helper || -L $helper ]]; then
+  echo "Plugin Workbench requires the reviewed omarchy-plugin-workbench helper package" >&2
   exit 69
 fi
+
+# The package location is root-managed. Checking the digest binds the normal
+# QML invocation to the exact executable reviewed for this plugin revision.
+actual_sha256="$(/usr/bin/sha256sum -- "$helper")"
+actual_sha256="${actual_sha256%% *}"
+if [[ $actual_sha256 != "$expected_sha256" ]]; then
+  echo "Plugin Workbench helper digest mismatch; install the matching package before using this plugin" >&2
+  exit 69
+fi
+
+exec "$helper" "$@"
