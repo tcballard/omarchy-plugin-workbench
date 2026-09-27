@@ -59,7 +59,7 @@ fn package_owned_links_are_classified_without_becoming_mutable_installations() {
         "#!/bin/sh\nprintf 'error: No package owns %s\\n' \"$3\" >&2\nexit 1\n",
     )
     .unwrap();
-    assert_eq!(inspect()["plugins"][0]["management"], "live-link");
+    assert_eq!(inspect()["plugins"][0]["management"], "unmanaged-link");
     fs::write(
         &pacman,
         "#!/bin/sh\necho 'error: could not open database' >&2\nexit 1\n",
@@ -1022,7 +1022,12 @@ fn update_refuses_stale_review_and_rolls_back_failed_validation() {
     );
     assert!(!failed.status.success());
     let failure: Value = serde_json::from_slice(&failed.stdout).unwrap();
-    assert!(failure["error"].as_str().unwrap().contains("rolled back"));
+    assert!(
+        failure["error"]
+            .as_str()
+            .unwrap()
+            .contains("installed files unchanged")
+    );
     assert_eq!(
         git(&harness.installed_target(), &["rev-parse", "HEAD"]),
         current
