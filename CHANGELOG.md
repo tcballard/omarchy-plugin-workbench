@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.0 — 2026-09-27
+
+- Record a digest of published snapshots, including file contents, modes, and empty directories. Show changed snapshots as drifted and older snapshots without a digest as unverified; refuse rollback into either state.
+- Validate deployment receipt identity and ownership before classifying managed links, and distinguish unowned symlinks from Workbench live links.
+- Preflight reviewed Git updates in a disposable checkout before modifying the installed plugin; refuse an update if the installed checkout changed during preflight and report failed rollback explicitly.
+- Preserve the v0.3.1 browse-only catalogue and first-party integration contract. Native Quattro and matching Arch package acceptance remain pending.
+
 ## 0.3.1 — 2026-09-23
 
 - Fetch the canonical marketplace catalogue without redirects and keep catalogue-driven installation, update, and repair disabled until an independently verifiable installation authority exists.

@@ -1,6 +1,6 @@
 # Omarchy Quattro live acceptance
 
-Complete this matrix on an actual official x86-64 Omarchy Quattro desktop before claiming native acceptance for `0.3.1`.
+Complete this matrix on an actual official x86-64 Omarchy Quattro desktop before claiming native acceptance for `0.4.0`.
 
 ## Record the host
 
