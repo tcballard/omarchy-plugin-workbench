@@ -592,6 +592,32 @@ fn register_link_snapshot_rollback_and_undeploy() {
 }
 
 #[test]
+fn changed_snapshots_are_reported_and_cannot_be_rollback_targets() {
+    let harness = Harness::new();
+    let project = harness.project.to_string_lossy().into_owned();
+    harness.json(&["add", &project, "--json"]);
+    harness.json(&["snapshot", "io.test.workbench-demo", "--json"]);
+    let earlier = fs::read_link(harness.installed_target()).unwrap();
+
+    fs::write(
+        harness.project.join("Panel.qml"),
+        "import QtQuick\nItem { objectName: \"newer\" }\n",
+    )
+    .unwrap();
+    harness.json(&["snapshot", "io.test.workbench-demo", "--json"]);
+    let current = fs::read_link(harness.installed_target()).unwrap();
+    assert_ne!(earlier, current);
+
+    fs::write(earlier.join("Panel.qml"), "altered after deployment").unwrap();
+    let rollback = harness.run(&["rollback", "io.test.workbench-demo", "--json"]);
+    assert!(!rollback.status.success());
+    assert_eq!(fs::read_link(harness.installed_target()).unwrap(), current);
+
+    fs::write(current.join("Panel.qml"), "altered active snapshot").unwrap();
+    assert_eq!(harness.json(&["status", "--json"])[0]["deployment"], "drifted");
+}
+
+#[test]
 fn new_scaffolds_registers_and_never_overwrites_a_personal_plugin() {
     let harness = Harness::new();
     let target = harness.root.path().join("personal-panel");
