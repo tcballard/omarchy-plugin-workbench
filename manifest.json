@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.tcballard.plugin-workbench",
   "name": "Plugin Workbench",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "author": "Tom Ballard",
   "license": "MIT",
   "description": "Browse, build, validate, test, deploy, maintain, and update Omarchy plugins.",

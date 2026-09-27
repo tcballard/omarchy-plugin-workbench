@@ -45,7 +45,7 @@ The workbench does not scan your home directory, execute install hooks, invoke a
 
 ## Status
 
-The `0.3.1` line adds plugin development and management workflows with automated Rust and lifecycle coverage. Catalogue listings are browse-only; catalogue-driven installation, update, and repair fail closed. It is pinned to:
+The `0.4.0` line adds snapshot integrity verification and preflights reviewed Git updates in a disposable checkout before changing installed files. Catalogue listings are browse-only; catalogue-driven installation, update, and repair fail closed. It is pinned to:
 
 - Omarchy Quattro contract: `b686ed892d9c3020c3336203f6d34cc75b544e2b`
 - Omarchy plugin manifest schema: `1`
