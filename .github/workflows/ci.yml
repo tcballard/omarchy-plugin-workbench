@@ -30,7 +30,9 @@ jobs:
           path: target/release/omarchy-plugin-workbench
           if-no-files-found: error
       - name: Shell syntax
-        run: bash -n bin/omarchy-plugin-workbench scripts/validate.sh
+        run: bash -n bin/omarchy-plugin-workbench scripts/validate.sh tests/helper-binding.sh
+      - name: Helper identity
+        run: bash tests/helper-binding.sh
       - name: Pinned Omarchy contract
         run: |
           git clone --filter=blob:none https://github.com/omacom/omarchy.git /tmp/omarchy

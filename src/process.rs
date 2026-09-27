@@ -361,11 +361,14 @@ fn drain_available(
     }
 }
 
-// Only Omarchy IPC tools need desktop discovery context. Keep the environment
-// scrubbed for Git, curl, and project checks (especially executable overrides).
+// Desktop tools need session discovery context. Keep the environment scrubbed
+// for Git, curl, and project checks (especially executable overrides).
 fn apply_omarchy_environment(command: &mut Command) {
     let program = Path::new(command.get_program()).file_name();
-    if program != Some(OsStr::new("omarchy")) && program != Some(OsStr::new("omarchy-shell")) {
+    if !["omarchy", "omarchy-shell", "hyprctl", "Hyprland"]
+        .iter()
+        .any(|name| program == Some(OsStr::new(name)))
+    {
         return;
     }
     for name in [

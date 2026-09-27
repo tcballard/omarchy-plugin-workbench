@@ -2,12 +2,14 @@ use crate::model::{
     CONFIG_SCHEMA, EnvironmentSpec, PROJECT_SCHEMA, Project, ProjectDefinition, RegistryConfig,
     WorkflowSpec,
 };
-use crate::paths::AppPaths;
+use crate::paths::{AppPaths, open_directory};
 use anyhow::{Context, Result, bail};
 use fs2::FileExt;
 use sha2::{Digest, Sha256};
+use std::ffi::CString;
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
+use std::os::fd::{AsRawFd, FromRawFd};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -22,14 +24,24 @@ pub struct RegistryLock {
 impl RegistryLock {
     pub fn acquire(paths: &AppPaths) -> Result<Self> {
         paths.ensure()?;
-        let file = OpenOptions::new()
-            .create(true)
-            .read(true)
-            .write(true)
-            .truncate(false)
-            .mode(0o600)
-            .open(&paths.lock_file)
-            .with_context(|| format!("open lock {}", paths.lock_file.display()))?;
+        let dir = open_directory(&paths.state_dir, false)?;
+        let name = CString::new("workbench.lock")?;
+        let raw = unsafe {
+            libc::openat(
+                dir.as_raw_fd(),
+                name.as_ptr(),
+                libc::O_CREAT | libc::O_RDWR | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+                0o600,
+            )
+        };
+        if raw < 0 {
+            return Err(std::io::Error::last_os_error())
+                .context("open workbench lock without following links");
+        }
+        let file = unsafe { File::from_raw_fd(raw) };
+        if !file.metadata()?.is_file() {
+            bail!("workbench lock is not a regular file");
+        }
         file.lock_exclusive().context("acquire workbench lock")?;
         Ok(Self { file })
     }

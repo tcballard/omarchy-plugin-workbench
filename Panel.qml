@@ -14,31 +14,6 @@ Panel {
   property var anchorItem: null
   property var hostWidget: null
   property string helperPath: ""
-  property bool helperCompatible: false
-  property string protocolOutput: ""
-  onHelperPathChanged: {
-    helperCompatible = false
-    if (helperPath && !protocolProcess.running) {
-      protocolProcess.command = [helperPath, "protocol", "--json"]
-      protocolProcess.running = true
-    }
-  }
-  onHelperCompatibleChanged: if (helperCompatible) Qt.callLater(root.ensureViewLoaded)
-
-  property var drawerState: ({supported: false, profiles: []})
-  property string drawerOutput: ""
-  property bool drawerQuery: true
-
-  function drawerRequest(profile) {
-    if ((!root.helperPath || !root.helperCompatible) || drawerProcess.running) return
-    root.drawerQuery = profile === undefined
-    root.drawerOutput = ""
-    drawerProcess.command = profile === undefined ? [root.helperPath, "drawer-status", "--json"]
-      : profile === null ? [root.helperPath, "drawer-open", "--json"]
-      : [root.helperPath, "drawer-profile", profile, "--json"]
-    drawerProcess.running = true
-  }
-
   property var projects: []
   property var pluginUpdates: []
   property var installedPlugins: []
@@ -125,7 +100,7 @@ Panel {
   // Opening and navigation only read local data. Network work is explicit.
   // Keep successful results in memory and avoid retry loops after failures.
   function ensureViewLoaded() {
-    if (!root.opened || root.busy || root.pendingAction || (!root.helperPath || !root.helperCompatible)) return
+    if (!root.opened || root.busy || root.pendingAction || !root.helperPath) return
     if (root.marketplaceOpen && !root.marketplaceAttempted) searchMarketplace()
     else if ((root.installedOpen || root.updatesOpen) && !root.portfolioAttempted) loadPortfolio()
     else if (root.buildOpen && !root.projectsAttempted) refresh()
@@ -265,7 +240,7 @@ Panel {
   }
 
   function refresh() {
-    if ((!root.helperPath || !root.helperCompatible) || refreshProcess.running) return
+    if (!root.helperPath || refreshProcess.running) return
     root.projectsAttempted = true
     root.refreshOutput = ""
     refreshProcess.command = [root.helperPath, "status", "--json"]
@@ -303,7 +278,7 @@ Panel {
   }
 
   function loadPortfolio() {
-    if ((!root.helperPath || !root.helperCompatible) || portfolioProcess.running) return
+    if (!root.helperPath || portfolioProcess.running) return
     root.portfolioAttempted = true
     root.portfolioOutput = ""
     portfolioProcess.command = [root.helperPath, "installed", "--json"]
@@ -315,7 +290,6 @@ Panel {
       var parsed = JSON.parse(root.portfolioOutput || "{}")
       root.installedPlugins = Array.isArray(parsed.plugins) ? parsed.plugins : []
       root.portfolioLoaded = true
-      root.drawerRequest()
     } catch (error) {
       root.message = "Could not parse installed plugin portfolio: " + error
       root.messageError = true
@@ -337,7 +311,7 @@ Panel {
   }
 
   function runAction(action, projectId) {
-    if (root.busy || (!root.helperPath || !root.helperCompatible)) return
+    if (root.busy || !root.helperPath) return
     root.actionOutput = ""
     root.actionError = ""
     root.message = action + " · " + projectId
@@ -348,7 +322,7 @@ Panel {
   }
 
   function runInstalledAction(action, pluginId) {
-    if (root.busy || (!root.helperPath || !root.helperCompatible)) return
+    if (root.busy || !root.helperPath) return
     root.actionOutput = ""
     root.actionError = ""
     root.message = (action === "installed-enable" ? "Enabling " : "Disabling ") + pluginId + "…"
@@ -406,7 +380,7 @@ Panel {
   }
 
   function checkUpdates() {
-    if (root.busy || (!root.helperPath || !root.helperCompatible)) return
+    if (root.busy || !root.helperPath) return
     root.actionOutput = ""
     root.actionError = ""
     root.message = "Fetching installed plugin updates…"
@@ -417,7 +391,7 @@ Panel {
   }
 
   function applyUpdate(pluginId, revision) {
-    if (root.busy || (!root.helperPath || !root.helperCompatible)) return
+    if (root.busy || !root.helperPath) return
     root.actionOutput = ""
     root.actionError = ""
     root.message = "Updating " + pluginId + " through Omarchy…"
@@ -428,7 +402,7 @@ Panel {
   }
 
   function applyAllUpdates() {
-    if (root.busy || (!root.helperPath || !root.helperCompatible) || root.availableUpdateCount === 0) return
+    if (root.busy || !root.helperPath || root.availableUpdateCount === 0) return
     root.actionOutput = ""
     root.actionError = ""
     root.message = "Applying " + root.availableUpdateCount + " reviewed update(s)…"
@@ -451,7 +425,7 @@ Panel {
   }
 
   function refreshMarketplace() {
-    if (root.busy || (!root.helperPath || !root.helperCompatible)) return
+    if (root.busy || !root.helperPath) return
     root.actionOutput = ""
     root.actionError = ""
     root.message = "Refreshing the official marketplace catalogue…"
@@ -462,7 +436,7 @@ Panel {
   }
 
   function searchMarketplace() {
-    if (root.busy || (!root.helperPath || !root.helperCompatible)) return
+    if (root.busy || !root.helperPath) return
     root.marketplaceAttempted = true
     root.actionOutput = ""
     root.actionError = ""
@@ -484,7 +458,7 @@ Panel {
   }
 
   function installMarketplace(plugin) {
-    if (root.busy || (!root.helperPath || !root.helperCompatible) || !plugin.installable) return
+    if (root.busy || !root.helperPath || !plugin.installable) return
     root.actionOutput = ""
     root.actionError = ""
     root.message = "Installing reviewed snapshot of " + plugin.name + "…"
@@ -497,7 +471,7 @@ Panel {
   }
 
   function updateMarketplace(plugin) {
-    if (root.busy || (!root.helperPath || !root.helperCompatible) || !plugin.managed || !plugin.updateAvailable) return
+    if (root.busy || !root.helperPath || !plugin.managed || !plugin.updateAvailable) return
     root.pendingAction = "marketplace-update"
     root.message = "Applying reviewed marketplace update for " + plugin.name + "…"
     root.messageError = false
@@ -507,7 +481,7 @@ Panel {
   }
 
   function updateManagedPlugin(plugin) {
-    if (root.busy || (!root.helperPath || !root.helperCompatible) || !plugin.updateAvailable || !plugin.catalogueRevision) return
+    if (root.busy || !root.helperPath || !plugin.updateAvailable || !plugin.catalogueRevision) return
     root.pendingAction = "marketplace-update"
     root.message = "Applying reviewed marketplace update for " + plugin.id + "…"
     root.messageError = false
@@ -620,40 +594,6 @@ Panel {
         root.message = root.message || "Workbench helper could not load projects"
         root.messageError = true
       }
-    }
-  }
-
-  Process {
-    id: protocolProcess
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: root.protocolOutput = String(text || "")
-    }
-    onExited: function(exitCode) {
-      Qt.callLater(function() {
-        try { root.helperCompatible = exitCode === 0 && JSON.parse(root.protocolOutput).protocol === 1 }
-        catch (error) { root.helperCompatible = false }
-        if (!root.helperCompatible) { root.message = "Install a Workbench helper supporting protocol 1"; root.messageError = true }
-      })
-    }
-  }
-
-  Process {
-    id: drawerProcess
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: root.drawerOutput = String(text || "")
-    }
-    onExited: function(exitCode) {
-      Qt.callLater(function() {
-        if (root.drawerQuery) {
-          try { root.drawerState = exitCode === 0 ? JSON.parse(root.drawerOutput) : ({supported: false, profiles: []}) }
-          catch (error) { root.drawerState = ({supported: false, profiles: []}) }
-        } else {
-          if (exitCode !== 0) { root.message = "Drawer could not apply that request"; root.messageError = true }
-          root.drawerRequest()
-        }
-      })
     }
   }
 
@@ -985,6 +925,17 @@ Panel {
                 onTriggered: root.refreshMarketplace()
               }
             }
+          }
+
+          Text {
+            visible: root.marketplaceOpen
+            width: parent.width
+            text: "Catalogue browsing only · install, update and repair are paused pending a verified marketplace source"
+            color: root.barForeground
+            opacity: 0.65
+            font.family: root.bar ? root.bar.fontFamily : Style.font.family
+            font.pixelSize: Style.font.caption
+            wrapMode: Text.Wrap
           }
 
           Rectangle {
@@ -1625,7 +1576,7 @@ Panel {
     readonly property var update: row.update
     readonly property bool marketplaceManaged: plugin.management === "marketplace"
     readonly property bool updateReady: marketplaceManaged
-      ? Boolean(plugin.updateAvailable) : Boolean(update && update.updateable)
+      ? Boolean(plugin.updateAvailable) : plugin.management === "git" && Boolean(update && update.updateable)
     readonly property string state: plugin.management === "drifted" ? "drifted"
       : plugin.management === "unverified-snapshot" ? "unverified"
       : marketplaceManaged
@@ -1636,11 +1587,12 @@ Panel {
       || state === "enabled" || state === "disabled"
     readonly property string sourceLabel: plugin.management === "first-party" ? "OMARCHY"
       : plugin.management === "marketplace" ? "MARKETPLACE MANAGED"
-      : plugin.management === "live-link" ? "LIVE DEVELOPMENT LINK"
+      : plugin.management === "package-owned" ? "PACKAGE OWNED · " + String(plugin.packageName || "")
+      : plugin.management === "ownership-unknown" ? "LINK OWNERSHIP UNKNOWN"
+      : plugin.management === "drifted" ? "DEPLOYMENT DRIFTED"
+      : plugin.management === "unverified-snapshot" ? "OLDER SNAPSHOT · REDEPLOY TO VERIFY"
       : plugin.management === "snapshot" ? "VERIFIED SNAPSHOT"
-      : plugin.management === "unverified-snapshot" ? "UNVERIFIED SNAPSHOT"
-      : plugin.management === "drifted" ? "DEPLOYMENT DRIFT"
-      : plugin.management === "unmanaged-link" ? "UNMANAGED LINK"
+      : plugin.management === "live-link" ? "LIVE DEVELOPMENT LINK"
       : plugin.management === "git" ? "DIRECT GIT CHECKOUT"
       : "LOCAL PLUGIN"
     implicitHeight: installedContent.implicitHeight + Style.space(18)
@@ -1718,7 +1670,7 @@ Panel {
             onTriggered: root.runInstalledAction("installed-disable", installedCard.plugin.id)
           }
           WorkbenchButton {
-            visible: installedCard.marketplaceManaged
+            visible: false
             label: root.marketplaceConfirmation === "repair:" + installedCard.plugin.id
               ? "Confirm repair" : "Repair"
             enabled: !root.busy
@@ -1730,26 +1682,6 @@ Panel {
               ? "Confirm remove" : "Remove"
             enabled: !root.busy
             onTriggered: root.confirmedMarketplaceAction("uninstall", installedCard.plugin)
-          }
-        }
-      }
-
-      Flow {
-        width: parent.width
-        spacing: Style.space(5)
-        visible: installedCard.plugin.id === "spencerbull.drawer" && root.drawerState.supported === true
-        WorkbenchButton {
-          label: "Open Drawer"
-          enabled: !drawerProcess.running
-          onTriggered: root.drawerRequest(null)
-        }
-        Repeater {
-          model: parent.visible ? root.drawerState.profiles : []
-          WorkbenchButton {
-            required property var modelData
-            label: (root.drawerState.activeProfile === modelData.id ? "✓ " : "") + modelData.name
-            enabled: !drawerProcess.running
-            onTriggered: root.drawerRequest(modelData.id)
           }
         }
       }
@@ -1773,6 +1705,16 @@ Panel {
         font.family: root.bar ? root.bar.fontFamily : Style.font.family
         font.pixelSize: Style.font.caption
         elide: Text.ElideRight
+      }
+
+      Text {
+        visible: installedCard.plugin.management === "package-owned"
+        width: parent.width
+        text: "Update or uninstall through package management. Disabling keeps the package installed."
+        textFormat: Text.PlainText
+        color: root.textMuted
+        font.pixelSize: Style.font.caption
+        wrapMode: Text.Wrap
       }
 
       Text {
@@ -2151,7 +2093,7 @@ Panel {
             onTriggered: root.updateMarketplace(marketplaceCard.plugin)
           }
           WorkbenchButton {
-            visible: marketplaceCard.plugin.managed
+            visible: false
             label: root.marketplaceConfirmation === "repair:" + marketplaceCard.plugin.id
               ? "Confirm repair" : "Repair"
             enabled: !root.busy

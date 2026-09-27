@@ -1,6 +1,6 @@
 # Plugin Workbench for Omarchy
 
-Plugin Workbench is a native Omarchy Quattro bar panel plus a bounded Rust helper for discovering, installing, developing, and managing shell plugins.
+Plugin Workbench is a native Omarchy Quattro bar panel plus a bounded Rust helper for browsing, developing, and managing shell plugins.
 
 On the proposed first-party integration, install the helper package and launch Workbench with its native binding:
 
@@ -9,11 +9,15 @@ omarchy-pkg-add omarchy-plugin-workbench
 # Super + Alt + P
 ```
 
-For development against this repository, build the helper and link the QML module through Omarchy's plugin loader:
+The QML plugin requires the matching helper package. Its launcher verifies the
+installed helper's exact release digest before running it. An older package or
+a different `/usr/bin/omarchy-plugin-workbench` fails closed. For development
+against this repository, build the helper for direct CLI use and link the QML
+module through Omarchy's plugin loader:
 
 ```bash
 cargo build --workspace --locked --release
-scripts/install-development
+omarchy plugin add "$(pwd)" --enable
 ```
 
 Workbench deliberately leaves its project registry and deployment history behind. To remove that retained local data too, run:
@@ -25,7 +29,7 @@ rm -rf -- "$HOME/.config/omarchy/plugin-workbench" \
 
 The native panel is organised around the complete plugin lifecycle:
 
-- **Discover** searches the cached official marketplace catalogue and installs reviewed snapshots.
+- **Discover** searches the cached official marketplace catalogue for browsing. Catalogue-driven installation is currently unavailable.
 - **Installed** inventories every plugin Omarchy discovers, identifies how it is managed, enables or disables eligible plugins, and offers only safe updates for its source type.
 - **Updates** separates exact-revision review and application from everyday inventory management.
 - **Build** creates, links, validates, tests, and prepares personal plugin projects.
@@ -34,14 +38,14 @@ Build supports these development loops explicitly:
 
 - **New plugin** creates a validated personal Panel, bar widget, or service starter at an explicit absolute path, initializes Git, and registers it without committing or replacing existing files.
 - **Live link** points Omarchy at the mutable plugin checkout for the fastest edit/reload loop.
-- **Snapshot** copies the plugin into a digest-verified deployment and atomically switches Omarchy to it. Previous managed deployments remain available for rollback.
+- **Snapshot** copies the plugin into an immutable, content-addressed deployment and atomically switches Omarchy to it. Previous managed deployments remain available for rollback.
 - **Test window** launches a disposable nested Hyprland compositor with an isolated Omarchy shell configuration and a live link to the project.
 
 The workbench does not scan your home directory, execute install hooks, invoke a shell for project checks, use `sudo`, publish plugins, or replace an installation it did not create. Marketplace discovery uses the official published catalogue; update discovery is limited to normal Git checkouts directly beneath Omarchy's documented plugins directory.
 
 ## Status
 
-The `0.3.0` line turns the established Workbench into a focused plugin management suite with automated Rust and lifecycle coverage. It is pinned to:
+The `0.3.1` line adds plugin development and management workflows with automated Rust and lifecycle coverage. Catalogue listings are browse-only; catalogue-driven installation, update, and repair fail closed. It is pinned to:
 
 - Omarchy Quattro contract: `b686ed892d9c3020c3336203f6d34cc75b544e2b`
 - Omarchy plugin manifest schema: `1`
@@ -108,30 +112,21 @@ bin/omarchy-plugin-workbench new /absolute/path/my-plugin \
 
 `panel` creates both a panel and its bar-widget launcher. `bar-widget` and `service` create focused single-entry-point starters. Workbench stages and validates the complete tree before publishing it, refuses an existing destination, initializes a `main` Git repository when Git is available, and never creates a commit or runs plugin code.
 
-## Search and install official marketplace listings
+## Browse official marketplace listings
 
-Open **Discover** in the panel to refresh the official catalogue, search locally by name, description, author, category, kind, or tag, and filter built-in, verified, installable, or installed listings. “Official marketplace” describes the catalogue source; community listings are not presented as Omarchy-authored plugins. Built-ins are browse-only because Omarchy manages them.
+Open **Discover** in the panel to refresh the official catalogue and search locally by name, description, author, category, kind, or tag. “Official marketplace” describes the catalogue source; community listings are not presented as Omarchy-authored plugins. All listings are browse-only in Workbench.
 
-Workbench caches [`https://omarchyplugins.com/catalog.json`](https://omarchyplugins.com/catalog.json) only when you explicitly refresh it. Search then works against that private local cache without a network request:
+Workbench caches [`https://plugins.omarchy.org/catalog.json`](https://plugins.omarchy.org/catalog.json) only when you explicitly refresh it. Search then works against that private local cache without a network request:
 
 ```bash
 bin/omarchy-plugin-workbench marketplace-refresh
 bin/omarchy-plugin-workbench marketplace-search clipboard --verified --json
-bin/omarchy-plugin-workbench marketplace-search --category Development --installable
+bin/omarchy-plugin-workbench marketplace-search --category Development
 ```
 
-For an installable community root plugin, search returns its repository and full marketplace-reviewed commit. Installation requires those exact values plus confirmation; Workbench rejects a stale review, checks out the detached commit with Git hooks disabled, validates the manifest internally and through Omarchy, then publishes and optionally enables it:
+The catalogue is public network input, not an independently signed package index. Workbench cannot establish installation authority from catalogue data alone. Catalogue-driven install, update, and repair commands fail closed until a verifiable authority mechanism exists. Use Omarchy's own plugin commands to install plugins after reviewing their source. Enabling third-party plugin code runs it with your user permissions.
 
-```bash
-bin/omarchy-plugin-workbench marketplace-install io.github.example.plugin \
-  --repo https://github.com/example/plugin \
-  --revision FULL_40_CHARACTER_REVIEWED_COMMIT \
-  --enable --yes
-```
-
-The catalogue is public network input protected by HTTPS, not a signed package index. A reviewed commit limits moving-target risk but does not make third-party code safe; enabling a plugin runs it with your user permissions.
-
-Workbench records every installation it creates. **Installed** shows the complete host view; **Workbench managed** listings can be updated only to the catalogue's next exact reviewed commit, repaired from that reviewed snapshot, or uninstalled with a recovery copy retained in private state. Marketplace-managed plugins are intentionally excluded from the separate mutable-remote update path.
+**Installed** shows the host inventory. For an installation Workbench already created, its ownership receipt remains available and Workbench can uninstall it with a recovery copy retained in private state. Marketplace-managed plugins are excluded from the separate mutable-remote update path.
 
 ```bash
 bin/omarchy-plugin-workbench portfolio
@@ -139,9 +134,6 @@ bin/omarchy-plugin-workbench installed
 bin/omarchy-plugin-workbench installed-disable io.github.example.plugin
 bin/omarchy-plugin-workbench installed-enable io.github.example.plugin
 bin/omarchy-plugin-workbench marketplace-managed
-bin/omarchy-plugin-workbench marketplace-update io.github.example.plugin \
-  --revision FULL_REVIEWED_COMMIT --yes
-bin/omarchy-plugin-workbench marketplace-repair io.github.example.plugin --yes
 bin/omarchy-plugin-workbench marketplace-uninstall io.github.example.plugin --yes
 ```
 
@@ -395,6 +387,16 @@ Config, state, receipts, and captured check output use owner-only permissions. S
 
 Workbench refuses to replace a normal directory, a Git checkout installed by Omarchy, or an unrecognised symlink. `undeploy` removes only the managed symlink and retains snapshot history. It never deletes the source checkout.
 
+Installed inventory checks symlink targets with `pacman -Qqo` against the resolved
+`manifest.json`. Package-owned links (including Core's Elsewhen link into
+`/usr/share/omarchy/plugins`) show their owning package rather than appearing as
+live development links. Updates and package uninstall belong to package management;
+Workbench's enable/disable controls only change shell activation. Disabling or
+unlinking a user entry does not uninstall its package. Workbench does not offer
+unlink/removal for these unmanaged links. If ownership cannot be established
+(including unavailable pacman or a broken link), inventory reports ownership unknown.
+This detection does not require proposed Core `system` metadata.
+
 ## Build Omarchy Plugins companion
 
 [Build Omarchy Plugins](https://github.com/tcballard/build-omarchy-plugins) is the
@@ -445,20 +447,3 @@ scripts/package.sh
 ## Security
 
 Omarchy plugins are unsandboxed code inside the long-running shell. Workbench reduces accidental mutation and command ambiguity; it is not a sandbox. Read [SECURITY.md](SECURITY.md) before adding execution features or installing third-party plugins.
-
-## Drawer integration and ownership
-
-Workbench owns building, testing and reviewed deployment. Omarchy owns plugin
-activation, ordering and service lifecycles. Drawer owns widget visibility and
-named task profiles; hiding a widget does not disable its plugin or polling.
-The optional `drawer-status`, `drawer-open` and `drawer-profile <id>` commands use
-Drawer scalar IPC version 1. No profile configuration is duplicated in Workbench.
-
-Snapshot receipts bind the staged bytes, entry types and modes to a full SHA-256.
-Status reports changed snapshots as drifted; rollback refuses them. Older receipts
-without a digest are unverified and require a fresh snapshot. Live-link rollback
-returns to the current source directory, not historical source bytes. Snapshot
-files remain owner-writable; the digest detects modification, not filesystem
-immutability. Interrupted switches retain `deployment-pending.json` and recover
-on the next invocation. Conflicting external changes leave the journal for manual
-inspection and are never overwritten.

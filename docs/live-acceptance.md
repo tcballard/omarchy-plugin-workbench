@@ -1,6 +1,6 @@
 # Omarchy Quattro live acceptance
 
-Complete this matrix on an actual official x86-64 Omarchy Quattro desktop before publishing `0.3.0`.
+Complete this matrix on an actual official x86-64 Omarchy Quattro desktop before claiming native acceptance for `0.3.1`.
 
 ## Record the host
 
@@ -14,10 +14,18 @@ Complete this matrix on an actual official x86-64 Omarchy Quattro desktop before
 
 ```bash
 cargo build --workspace --locked --release
-sudo install -Dm755 target/release/omarchy-plugin-workbench /usr/bin/omarchy-plugin-workbench
+omarchy-pkg-add omarchy-plugin-workbench
+sha256sum /usr/bin/omarchy-plugin-workbench
+bin/omarchy-plugin-workbench --version
 omarchy plugin validate .
 qmllint -I "$OMARCHY_PATH/shell" BarWidget.qml Panel.qml
 ```
+
+The installed package executable must match the SHA-256 pinned in
+`bin/omarchy-plugin-workbench`. A different or missing executable must fail
+closed, including when a local `target/release` build is present. A development
+build can be run directly by its path for CLI work; it does not replace the
+reviewed helper invoked by the QML plugin.
 
 ## Native shell matrix
 
@@ -33,13 +41,12 @@ qmllint -I "$OMARCHY_PATH/shell" BarWidget.qml Panel.qml
 - Confirm keyboard focus returns to the previous application after closing.
 - Confirm the panel fits at 100%, fractional, and high-DPI scale where available.
 - Register valid root and nested plugin projects from the panel.
-- Open Discover, refresh the production catalogue, and search by text plus each built-in, verified, installable, and installed filter.
+- Open Discover, refresh the production catalogue, and search by text plus each available built-in, verified, and installed filter. Confirm listings are browse-only.
 - Open Updates independently and confirm review-first state, exact revisions, blocked states, and the empty-current state.
-- Install and enable one reviewed community listing; confirm its displayed commit equals installed `HEAD` and its panel state changes to installed.
-- Refresh after a newer reviewed snapshot, apply it, and confirm `HEAD`, the ownership receipt and panel status all move to the same exact commit.
-- Repair a deliberately damaged managed checkout and confirm the prior directory remains recoverable in Workbench trash.
+- Attempt catalogue-driven install, update, and repair from the helper; confirm each fails closed without changing the target, receipt, or enabled state.
+- Inspect a previously Workbench-managed installation, if present; confirm its ownership receipt is shown without offering catalogue-driven mutation.
 - Use the two-step uninstall control and confirm the target disappears, the receipt is removed and the recovery copy remains.
-- Change the cached listing between review and install and confirm Workbench refuses it without creating a target.
+- Change the cached listing between searches and confirm it cannot become an installation authority.
 - Verify malformed, reserved-id, symlinked, and missing-entry-point projects fail visibly.
 - Run Validate and Test, including an untrusted-check refusal.
 - Link a development checkout and confirm saved QML changes reload.
