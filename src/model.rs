@@ -109,6 +109,8 @@ impl Default for RegistryConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeploymentEntry {
+    #[serde(default)]
+    pub content_digest: Option<String>,
     pub mode: DeploymentMode,
     pub target: PathBuf,
     pub revision: Option<String>,

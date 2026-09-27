@@ -158,6 +158,7 @@ pub fn deploy_live(paths: &AppPaths, project: &Project) -> Result<ActionReport> 
     let git = git_state(&project.project_root);
     let entry = DeploymentEntry {
         mode: DeploymentMode::LiveLink,
+        content_digest: None,
         target: project.plugin_root.clone(),
         revision: git.revision,
         dirty: git.dirty,
@@ -192,12 +193,23 @@ pub fn deploy_snapshot(paths: &AppPaths, project: &Project) -> Result<ActionRepo
         fs::remove_dir_all(&temporary)?;
         bail!("plugin source changed during snapshot copy");
     }
-    let mut staged_project = project.clone();
-    staged_project.plugin_root = temporary.clone();
-    validate(&staged_project).context("validate copied snapshot before publication")?;
+    let staged = (|| -> Result<String> {
+        let mut staged_project = project.clone();
+        staged_project.plugin_root = temporary.clone();
+        validate(&staged_project).context("validate copied snapshot before publication")?;
+        snapshot_digest(&temporary)
+    })();
+    let digest = match staged {
+        Ok(digest) => digest,
+        Err(error) => {
+            let _ = fs::remove_dir_all(&temporary);
+            return Err(error);
+        }
+    };
     fs::rename(&temporary, &snapshot).context("publish immutable plugin snapshot")?;
     let entry = DeploymentEntry {
         mode: DeploymentMode::Snapshot,
+        content_digest: Some(digest),
         target: snapshot,
         revision: git.revision,
         dirty: git.dirty,
@@ -224,6 +236,7 @@ pub fn rollback(paths: &AppPaths, project: &Project) -> Result<ActionReport> {
     if !target.is_dir() {
         bail!("rollback target no longer exists: {}", target.display());
     }
+    verify_entry(&receipt.history[next_index])?;
     let previous_receipt = receipt.clone();
     receipt.active_index = next_index;
     publish_deployment(
@@ -263,9 +276,53 @@ pub fn undeploy(paths: &AppPaths, project: &Project) -> Result<ActionReport> {
 }
 
 pub fn load_receipt_for(paths: &AppPaths, id: &str) -> Result<Option<DeploymentReceipt>> {
+    crate::manifest::validate_id(id)?;
     let _lock = RegistryLock::acquire(paths)?;
     recover_journal(paths, id)?;
-    load_receipt(&paths.receipt_path(id))
+    let receipt = load_receipt(&paths.receipt_path(id))?;
+    if let Some(receipt) = &receipt
+        && (receipt.plugin_id != id
+            || receipt.managed_target != paths.plugins_dir.join(id)
+            || receipt.schema_version != RECEIPT_SCHEMA
+            || receipt.history.get(receipt.active_index).is_none())
+    {
+        bail!("invalid deployment receipt ownership");
+    }
+    Ok(receipt)
+}
+
+fn verify_entry(entry: &DeploymentEntry) -> Result<()> {
+    if entry.mode == DeploymentMode::Snapshot {
+        let expected = entry
+            .content_digest
+            .as_deref()
+            .context("legacy snapshot is unverified; deploy a fresh snapshot")?;
+        if snapshot_digest(&entry.target)? != expected {
+            bail!("snapshot contents drifted from deployment receipt");
+        }
+    }
+    validate_plugin(&entry.target)?;
+    Ok(())
+}
+
+pub fn deployment_kind(paths: &AppPaths, id: &str) -> Result<Option<&'static str>> {
+    let Some(receipt) = load_receipt_for(paths, id)? else {
+        return Ok(None);
+    };
+    if verify_managed_target(&receipt).is_err() {
+        return Ok(Some("drifted"));
+    }
+    let entry = &receipt.history[receipt.active_index];
+    if entry.mode == DeploymentMode::Snapshot && entry.content_digest.is_none() {
+        return Ok(Some("unverified-snapshot"));
+    }
+    if verify_entry(entry).is_err() {
+        return Ok(Some("drifted"));
+    }
+    Ok(Some(match entry.mode {
+        DeploymentMode::Snapshot => "snapshot",
+        DeploymentMode::LiveLink => "live-link",
+    }))
 }
 
 fn switch_deployment(
@@ -595,6 +652,43 @@ fn content_fingerprint(root: &Path) -> Result<String> {
     Ok(format!("{:x}", hash.finalize()))
 }
 
+// Hash the published tree, including modes and empty directories. Unlike the
+// source-change fingerprint, no names are excluded from integrity checking.
+fn snapshot_digest(root: &Path) -> Result<String> {
+    let mut entries = WalkDir::new(root)
+        .follow_links(false)
+        .into_iter()
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    entries.sort_by(|left, right| left.path().cmp(right.path()));
+    let mut hash = Sha256::new();
+    for entry in entries {
+        let relative = entry.path().strip_prefix(root)?;
+        let name = relative.as_os_str().as_encoded_bytes();
+        hash.update((name.len() as u64).to_le_bytes());
+        hash.update(name);
+        let metadata = fs::symlink_metadata(entry.path())?;
+        hash.update((metadata.permissions().mode() & 0o777).to_le_bytes());
+        if metadata.is_dir() {
+            hash.update(b"directory");
+        } else if metadata.is_file() {
+            hash.update(b"file");
+            hash.update(metadata.len().to_le_bytes());
+            let mut file = File::open(entry.path())?;
+            let mut buffer = [0_u8; 65536];
+            loop {
+                let n = file.read(&mut buffer)?;
+                if n == 0 {
+                    break;
+                }
+                hash.update(&buffer[..n]);
+            }
+        } else {
+            bail!("unsupported snapshot entry: {}", entry.path().display());
+        }
+    }
+    Ok(format!("{:x}", hash.finalize()))
+}
+
 fn copy_tree(source: &Path, destination: &Path) -> Result<()> {
     let source_fd = open_directory(source, false)?;
     let destination_parent = open_directory(
@@ -718,6 +812,21 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_digest_covers_modes_directories_and_symlinks() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("one");
+        fs::write(&path, "same bytes").unwrap();
+        let before = snapshot_digest(dir.path()).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
+        let executable = snapshot_digest(dir.path()).unwrap();
+        assert_ne!(before, executable);
+        fs::create_dir(dir.path().join("empty")).unwrap();
+        assert_ne!(executable, snapshot_digest(dir.path()).unwrap());
+        symlink(&path, dir.path().join("alias")).unwrap();
+        assert!(snapshot_digest(dir.path()).is_err());
+    }
+
+    #[test]
     fn snapshot_copy_rejects_linked_source_files() {
         let root = tempdir().unwrap();
         let source = root.path().join("source");
@@ -747,6 +856,7 @@ mod tests {
         let receipt_path = paths.receipt_path("io.test.plugin");
         let old_entry = DeploymentEntry {
             mode: DeploymentMode::Snapshot,
+            content_digest: None,
             target: old.clone(),
             revision: None,
             dirty: false,
@@ -780,6 +890,7 @@ mod tests {
         };
         let entry = DeploymentEntry {
             mode: DeploymentMode::Snapshot,
+            content_digest: None,
             target: new,
             revision: None,
             dirty: false,
@@ -813,6 +924,7 @@ mod tests {
             active_index: 0,
             history: vec![DeploymentEntry {
                 mode: DeploymentMode::Snapshot,
+                content_digest: None,
                 target: old.clone(),
                 revision: None,
                 dirty: false,

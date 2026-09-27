@@ -61,6 +61,11 @@ pub fn inspect(paths: &AppPaths) -> Result<InstalledReport> {
             .unwrap_or(false);
         let managed_plugin = managed_by_id.get(id.as_str()).copied();
         let target = paths.plugins_dir.join(&id);
+        let development = if !first_party && managed_plugin.is_none() {
+            crate::deploy::deployment_kind(paths, &id)?
+        } else {
+            None
+        };
         let ownership = if !first_party && target.is_symlink() {
             package_owner(&target)
         } else {
@@ -74,8 +79,10 @@ pub fn inspect(paths: &AppPaths) -> Result<InstalledReport> {
             "ownership-unknown"
         } else if managed_plugin.is_some() {
             "marketplace"
+        } else if let Some(kind) = development {
+            kind
         } else if target.is_symlink() {
-            "live-link"
+            "unmanaged-link"
         } else if target.join(".git").is_dir() {
             "git"
         } else {

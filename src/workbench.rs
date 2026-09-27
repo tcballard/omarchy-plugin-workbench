@@ -1,7 +1,7 @@
 use crate::deploy::{git_state, load_receipt_for, validate};
 use crate::model::{
     ActionReport, BUILDER_REPOSITORY, BuilderCompanionReport, BuilderInstallation, CheckReport,
-    CheckResult, CheckSpec, DeploymentMode, DoctorReport, EnvironmentReport, EnvironmentResult,
+    CheckResult, CheckSpec, DoctorReport, EnvironmentReport, EnvironmentResult,
     OMARCHY_CONTRACT_REVISION, OMARCHY_MANIFEST_SCHEMA, PROJECT_SCHEMA, Project, ProjectStatus,
     ReleaseReadinessReport, ToolResult, WorkflowReport,
 };
@@ -40,11 +40,9 @@ pub fn project_status(
             if active.is_some_and(|entry| entry.target == actual) {
                 let entry = active.expect("checked above");
                 (
-                    match entry.mode {
-                        DeploymentMode::LiveLink => "live-link",
-                        DeploymentMode::Snapshot => "snapshot",
-                    }
-                    .to_owned(),
+                    crate::deploy::deployment_kind(paths, &project.id)?
+                        .unwrap_or("drifted")
+                        .to_owned(),
                     entry.revision.clone(),
                 )
             } else {

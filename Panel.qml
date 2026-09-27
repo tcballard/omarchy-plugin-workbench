@@ -1577,7 +1577,9 @@ Panel {
     readonly property bool marketplaceManaged: plugin.management === "marketplace"
     readonly property bool updateReady: marketplaceManaged
       ? Boolean(plugin.updateAvailable) : plugin.management === "git" && Boolean(update && update.updateable)
-    readonly property string state: marketplaceManaged
+    readonly property string state: plugin.management === "drifted" ? "drifted"
+      : plugin.management === "unverified-snapshot" ? "unverified"
+      : marketplaceManaged
       ? String(plugin.managedState || "current")
       : update ? String(update.state || "unknown")
       : Boolean(plugin.enabled) ? "enabled" : "disabled"
@@ -1587,6 +1589,9 @@ Panel {
       : plugin.management === "marketplace" ? "MARKETPLACE MANAGED"
       : plugin.management === "package-owned" ? "PACKAGE OWNED · " + String(plugin.packageName || "")
       : plugin.management === "ownership-unknown" ? "LINK OWNERSHIP UNKNOWN"
+      : plugin.management === "drifted" ? "DEPLOYMENT DRIFTED"
+      : plugin.management === "unverified-snapshot" ? "OLDER SNAPSHOT · REDEPLOY TO VERIFY"
+      : plugin.management === "snapshot" ? "VERIFIED SNAPSHOT"
       : plugin.management === "live-link" ? "LIVE DEVELOPMENT LINK"
       : plugin.management === "git" ? "DIRECT GIT CHECKOUT"
       : "LOCAL PLUGIN"
