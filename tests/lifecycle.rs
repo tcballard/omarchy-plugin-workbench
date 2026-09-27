@@ -614,7 +614,10 @@ fn changed_snapshots_are_reported_and_cannot_be_rollback_targets() {
     assert_eq!(fs::read_link(harness.installed_target()).unwrap(), current);
 
     fs::write(current.join("Panel.qml"), "altered active snapshot").unwrap();
-    assert_eq!(harness.json(&["status", "--json"])[0]["deployment"], "drifted");
+    assert_eq!(
+        harness.json(&["status", "--json"])[0]["deployment"],
+        "drifted"
+    );
 }
 
 #[test]
