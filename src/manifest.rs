@@ -121,7 +121,7 @@ fn required_string(object: &serde_json::Map<String, Value>, field: &str) -> Resu
     Ok(value.to_owned())
 }
 
-fn validate_id(id: &str) -> Result<()> {
+pub(crate) fn validate_id(id: &str) -> Result<()> {
     if id.starts_with("omarchy.") {
         bail!("plugin id '{id}' uses the reserved omarchy.* namespace");
     }
